@@ -1,0 +1,785 @@
+
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { ref, onValue, update, get, set } from "firebase/database";
+import { db } from './firebase';
+import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material } from './types';
+import { GLOBAL_STAGES, calculateRoadmap } from './workflowConfig';
+
+const ODTContext = createContext<ODTContextType | undefined>(undefined);
+
+const escapeFirebaseKey = (key: string) => key.toLowerCase().trim().replace(/[\.\#\$\/\[\]]/g, '_');
+
+export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const savedSession = localStorage.getItem('apc_session');
+    if (savedSession) {
+      try {
+        const parsedUser = JSON.parse(savedSession);
+        setUser(parsedUser);
+      } catch (e) {
+        console.error("Error al recuperar sesión", e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!db) {
+      setLoading(false);
+      return;
+    }
+    const projectsRef = ref(db, 'projects');
+    const usersRef = ref(db, 'users');
+    const clientsRef = ref(db, 'clients');
+
+    onValue(projectsRef, (s) => {
+      const d = s.val();
+      setProjects(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
+    });
+
+    onValue(usersRef, (s) => {
+      const d = s.val();
+      setUsers(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
+    });
+
+    onValue(clientsRef, (s) => {
+      const d = s.val();
+      setClients(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
+    });
+
+    const notificationsRef = ref(db, 'notifications');
+    onValue(notificationsRef, (s) => {
+      const d = s.val();
+      if (d) {
+        const list = Object.keys(d).map(k => ({ ...d[k], id: k }));
+        setNotifications(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      } else {
+        setNotifications([]);
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  const getRoadmapStages = (project: Project) => {
+    return calculateRoadmap(project.areas_seleccionadas || []);
+  };
+
+  const login = async (username: string, pass: string): Promise<LoginResult> => {
+    const cleanUsername = username.toLowerCase().trim();
+    const dbKey = escapeFirebaseKey(cleanUsername);
+    if (cleanUsername === 'admin' && pass === 'admin') {
+      const adminBypass: User = { id: 'admin', name: 'Admin Bypass', username: 'admin', department: 'Sistemas', role: UserRole.Admin, active: true };
+      setUser(adminBypass);
+      localStorage.setItem('apc_session', JSON.stringify(adminBypass));
+      return { success: true };
+    }
+    try {
+      const userRef = ref(db, `users/${dbKey}`);
+      const snapshot = await get(userRef);
+      if (!snapshot.exists()) return { success: false, error: `Usuario no encontrado.` };
+      const userData = snapshot.val();
+      if (!userData.active) return { success: false, error: 'Cuenta inactiva.' };
+      if (userData.password !== pass) return { success: false, error: 'Contraseña incorrecta.' };
+      const authUser: User = { ...userData, id: dbKey };
+      setUser(authUser);
+      localStorage.setItem('apc_session', JSON.stringify(authUser));
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: 'Error de conexión.' };
+    }
+  };
+
+  const logout = () => { setUser(null); localStorage.removeItem('apc_session'); };
+
+  const createNotification = async (notif: Omit<Notification, 'id' | 'read' | 'createdAt'>) => {
+    if (!db) return;
+    const id = `NOTIF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const newNotif: Notification = {
+      ...notif,
+      id,
+      read: false,
+      createdAt: new Date().toISOString()
+    };
+    await set(ref(db, `notifications/${id}`), newNotif);
+  };
+
+  const markNotificationAsRead = async (id: string) => {
+    if (!db) return;
+    await update(ref(db, `notifications/${id}`), { read: true });
+  };
+
+  const clearNotifications = async () => {
+    if (!db || !user) return;
+    const userNotifs = notifications.filter(n => n.userId === user.id);
+    const updates: any = {};
+    userNotifs.forEach(n => {
+      updates[`notifications/${n.id}`] = null;
+    });
+    await update(ref(db), updates);
+  };
+
+  // SLA Background Check
+  useEffect(() => {
+    if (!user || projects.length === 0 || !db) return;
+
+    const checkSLAs = async () => {
+      const now = new Date();
+      for (const p of projects) {
+        if (p.status === 'Finalizado' || p.status === 'Cancelado') continue;
+
+        const lastUpdate = new Date(p.updatedAt || p.createdAt);
+        const diffDays = Math.floor((now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (diffDays >= 3) {
+          // 1. Notificación para el responsable actual
+          const stages = getRoadmapStages(p);
+          const currentArea = stages[p.current_stage_index || 0];
+          const currentAssignment = p.asignaciones?.find(a => a.area === currentArea);
+
+          if (currentAssignment) {
+            const notifKey = `SLA-USER-${p.id}-${currentAssignment.usuarioId}`;
+            const alreadyNotified = notifications.some(n => n.userId === currentAssignment.usuarioId && n.projectId === p.id && n.type === 'sla_alert');
+            if (!alreadyNotified) {
+              await createNotification({
+                userId: currentAssignment.usuarioId,
+                title: '⚠️ ALERTA DE SLA (3 DÍAS)',
+                message: `La ODT ${p.id} lleva más de 3 días a tu cargo sin avances.`,
+                type: 'sla_alert',
+                projectId: p.id
+              });
+            }
+          }
+
+          // 2. Notificación para el líder del área
+          const areaLeader = users.find(u => u.department === currentArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+          if (areaLeader) {
+            const alreadyNotified = notifications.some(n => n.userId === areaLeader.id && n.projectId === p.id && n.type === 'sla_alert' && n.title.includes('RETRASO EN ÁREA'));
+            if (!alreadyNotified) {
+              await createNotification({
+                userId: areaLeader.id,
+                title: '🚨 RETRASO EN ÁREA (SLA 3D)',
+                message: `La ODT ${p.id} lleva estancada 3 días en tu área (${currentArea}).`,
+                type: 'sla_alert',
+                projectId: p.id
+              });
+            }
+          }
+        }
+      }
+    };
+
+    const timer = setTimeout(checkSLAs, 10000); // Check 10 seconds after load
+    return () => clearTimeout(timer);
+  }, [user, projects, users, notifications]);
+
+  const addProject = async (projectData: Partial<Project>) => {
+    if (!db || !user) return;
+    const projectId = projectData.id;
+    if (!projectId) return;
+    const newProject = {
+      ...projectData,
+      status: 'Borrador',
+      current_stage_index: 0,
+      etapa_actual: GLOBAL_STAGES.START,
+      etapaActual: GLOBAL_STAGES.START,
+      ownerId: user.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      comentarios: [
+        { id: `sys-${Date.now()}`, authorId: user.id, authorName: user.name, text: `ODT INICIADA EN ${GLOBAL_STAGES.START.toUpperCase()}`, createdAt: new Date().toISOString(), isSystemEvent: true },
+        ...(projectData.referenceLinks && projectData.referenceLinks.length > 0 ? [{
+          id: `ref-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `ENLACES DE REFERENCIA INICIALES: ${projectData.referenceLinks.join(', ')}`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }] : [])
+      ],
+      asignaciones: [],
+      pagado: false,
+      facturado: false
+    };
+    await set(ref(db, `projects/${projectId}`), newProject);
+
+    // Notificación para el líder de cuentas (si no es el mismo que crea)
+    const accountsLeader = users.find(u => u.role === UserRole.Cuentas_Lider);
+    if (accountsLeader && accountsLeader.id !== user.id) {
+      await createNotification({
+        userId: accountsLeader.id,
+        title: '🆕 NUEVA ODT REGISTRADA',
+        message: `Se ha creado la ODT ${projectId} para el cliente ${newProject.empresa}.`,
+        type: 'new_odt',
+        projectId: projectId
+      });
+    }
+  };
+
+  const removeProject = async (projectId: string) => {
+    if (!db || (user?.role !== UserRole.Admin && user?.role !== UserRole.Cuentas_Lider)) return;
+    try {
+      await set(ref(db, `projects/${projectId}`), null);
+    } catch (error) {
+      console.error("Fallo al purgar ODT en Firebase:", error);
+      throw error;
+    }
+  };
+
+  const advanceProjectStage = async (projectId: string, comment: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const stages = getRoadmapStages(project);
+    const oldStage = stages[project.current_stage_index || 0];
+    const newIndex = (project.current_stage_index || 0) + 1;
+    const proximaArea = stages[newIndex] || 'Finalizado';
+    
+    const linkMatch = comment.match(/Link: (https?:\/\/[^\s|]+)/);
+    const link = linkMatch ? linkMatch[1] : (project.last_delivery_link || "");
+    
+    let newStatus: Project['status'] = 'En Proceso';
+    if (newIndex >= stages.length - 1) newStatus = 'Finalizado';
+    else if (proximaArea.toUpperCase().includes('REVISIÓN QA')) newStatus = 'QA';
+
+    const updates: any = {
+      current_stage_index: newIndex,
+      etapa_actual: proximaArea,
+      etapaActual: proximaArea, // Sync for visibility
+      status: newStatus,
+      last_delivery_link: link,
+      last_delivery_comment: comment,
+      updatedAt: new Date().toISOString(),
+      comentarios: [{ 
+        id: `step-${Date.now()}`, 
+        authorId: user.id, 
+        authorName: user.name, 
+        text: comment.includes('Entrega Técnica') ? comment : `Etapa [${oldStage}] completada. Enviado a [${proximaArea}]. Nota: ${comment}`, 
+        createdAt: new Date().toISOString(), 
+        isSystemEvent: true 
+      }, ...(project.comentarios || [])]
+    };
+
+    if (newIndex >= stages.length - 1) {
+      updates.fecha_finalizado = new Date().toISOString();
+    }
+
+    if (proximaArea === GLOBAL_STAGES.CLOSING) {
+      updates.accounts_approval_ok = false;
+    }
+    
+    await update(ref(db, `projects/${projectId}`), updates);
+
+    // Notificación para el líder de la siguiente área
+    const nextArea = proximaArea;
+    const nextLeader = users.find(u => u.department === nextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+    if (nextLeader) {
+      await createNotification({
+        userId: nextLeader.id,
+        title: '📂 NUEVA ODT EN TU ÁREA',
+        message: `La ODT ${projectId} ha ingresado a la etapa de ${nextArea}.`,
+        type: 'new_odt',
+        projectId: projectId
+      });
+    }
+  };
+
+  const processQA = async (projectId: string, approved: boolean, feedback: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const stages = getRoadmapStages(project);
+    const qaStageName = stages[project.current_stage_index || 0];
+
+    if (approved) {
+      const newIndex = (project.current_stage_index || 0) + 1;
+      const proximaAreaCalculada = stages[newIndex] || GLOBAL_STAGES.CLOSING;
+      
+      let newStatus: Project['status'] = 'En Proceso';
+      if (newIndex >= stages.length - 1) newStatus = 'Finalizado';
+      else if (proximaAreaCalculada.toUpperCase().includes('REVISIÓN QA')) newStatus = 'QA';
+
+      const updates: any = {
+        current_stage_index: newIndex,
+        etapa_actual: proximaAreaCalculada,
+        etapaActual: proximaAreaCalculada,
+        status: newStatus,
+        correccion_ok: true,
+        ultimoComentarioQA: 'Aprobado por ' + user.name + (feedback ? ': ' + feedback : ''),
+        fechaAprobacionQA: new Date().toISOString(),
+        delivery_history: project.last_delivery_link ? [
+          { 
+            link: project.last_delivery_link, 
+            comment: project.last_delivery_comment || '', 
+            area: stages[(project.current_stage_index || 0) - 1] || qaStageName, 
+            date: new Date().toISOString(), 
+            authorId: user.id, 
+            authorName: user.name 
+          },
+          ...(project.delivery_history || [])
+        ] : (project.delivery_history || []),
+        updatedAt: new Date().toISOString(),
+        comentarios: [{ 
+          id: `qa-${Date.now()}`, 
+          authorId: user.id, 
+          authorName: user.name, 
+          text: `APROBADO en [${qaStageName}]. Feedback: ${feedback}`, 
+          createdAt: new Date().toISOString(), 
+          isSystemEvent: true 
+        }, ...(project.comentarios || [])]
+      };
+
+      if (proximaAreaCalculada === GLOBAL_STAGES.CLOSING) {
+        updates.accounts_approval_ok = false;
+      }
+      
+      if (newIndex >= stages.length - 1) {
+        updates.fecha_finalizado = new Date().toISOString();
+      }
+
+      await update(ref(db, `projects/${projectId}`), updates);
+
+      // Notificación para el líder de la siguiente área
+      const nextLeader = users.find(u => u.department === proximaAreaCalculada && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+      if (nextLeader) {
+        await createNotification({
+          userId: nextLeader.id,
+          title: '✅ ODT APROBADA POR QA',
+          message: `La ODT ${projectId} ha sido aprobada y enviada a tu área (${proximaAreaCalculada}).`,
+          type: 'new_odt',
+          projectId: projectId
+        });
+      }
+
+      return proximaAreaCalculada;
+    } else {
+      const newIndex = project.current_stage_index - 1;
+      const areaAnterior = stages[newIndex];
+      const updates: any = {
+        current_stage_index: newIndex,
+        etapa_actual: areaAnterior,
+        etapaActual: areaAnterior,
+        correccion_ok: false,
+        status: 'Correcciones',
+        ultimoComentarioQA: 'Rechazado por ' + user.name + ': ' + feedback,
+        updatedAt: new Date().toISOString(),
+        comentarios: [{ 
+          id: `qa-${Date.now()}`, 
+          authorId: user.id, 
+          authorName: user.name, 
+          text: `RECHAZADO en [${qaStageName}]. Feedback: ${feedback}. Regresando a [${areaAnterior}].`, 
+          createdAt: new Date().toISOString(), 
+          isSystemEvent: true 
+        }, ...(project.comentarios || [])]
+      };
+      await update(ref(db, `projects/${projectId}`), updates);
+
+      // Notificación para el responsable de la etapa anterior (quien debe corregir)
+      const previousAssignment = project.asignaciones?.find(a => a.area === areaAnterior);
+      if (previousAssignment) {
+        await createNotification({
+          userId: previousAssignment.usuarioId,
+          title: '❌ ODT RECHAZADA POR QA',
+          message: `La ODT ${projectId} ha sido rechazada en QA. Feedback: ${feedback}. Por favor, realiza las correcciones.`,
+          type: 'sla_alert',
+          projectId: projectId
+        });
+      }
+
+      return areaAnterior;
+    }
+  };
+
+  const processAccountsReview = async (projectId: string, approved: boolean, feedback: string, returnToArea?: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const stages = getRoadmapStages(project);
+
+    if (approved) {
+      const updates: any = {
+        accounts_approval_ok: true,
+        updatedAt: new Date().toISOString(),
+        comentarios: [{
+          id: `acc-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `CUENTAS: Calidad Operativa Aprobada. Feedback: ${feedback}`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }, ...(project.comentarios || [])]
+      };
+      await update(ref(db, `projects/${projectId}`), updates);
+    } else {
+      const targetArea = returnToArea || stages[project.current_stage_index - 1];
+      const targetIndex = stages.indexOf(targetArea);
+      
+      const updates: any = {
+        current_stage_index: targetIndex,
+        etapa_actual: targetArea,
+        etapaActual: targetArea,
+        accounts_approval_ok: false,
+        status: 'Correcciones',
+        updatedAt: new Date().toISOString(),
+        comentarios: [{
+          id: `acc-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `CUENTAS: Calidad Rechazada. Regresando a [${targetArea}]. Instrucciones: ${feedback}`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }, ...(project.comentarios || [])]
+      };
+      await update(ref(db, `projects/${projectId}`), updates);
+
+      const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+      if (targetLeader) {
+        await createNotification({
+          userId: targetLeader.id,
+          title: '⚠️ CORRECCIÓN SOLICITADA POR CUENTAS',
+          message: `La ODT ${projectId} ha sido devuelta a tu área por Cuentas. Instrucciones: ${feedback}`,
+          type: 'sla_alert',
+          projectId: projectId
+        });
+      }
+
+      const assignedUser = project.asignaciones?.find(a => a.area === targetArea);
+      if (assignedUser && (!targetLeader || assignedUser.usuarioId !== targetLeader.id)) {
+        await createNotification({
+          userId: assignedUser.usuarioId,
+          title: '⚠️ CORRECCIÓN SOLICITADA POR CUENTAS',
+          message: `Se han solicitado ajustes en la ODT ${projectId} para tu área (${targetArea}). Instrucciones: ${feedback}`,
+          type: 'sla_alert',
+          projectId: projectId
+        });
+      }
+    }
+  };
+
+  const submitForPresentation = async (projectId: string, link: string, version: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updates: any = {
+      presentation_link: link,
+      presentation_version: version,
+      presentation_date: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      comentarios: [{
+        id: `pres-${Date.now()}`,
+        authorId: user.id,
+        authorName: user.name,
+        text: `PRESENTACIÓN PARA CLIENTE: Versión ${version} subida. Link: ${link}`,
+        createdAt: new Date().toISOString(),
+        isSystemEvent: true
+      }, ...(project.comentarios || [])]
+    };
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
+  const processClientFeedback = async (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const stages = getRoadmapStages(project);
+    let updates: any = {
+      client_feedback: result,
+      updatedAt: new Date().toISOString(),
+    };
+
+    let alarmTriggered = false;
+
+    if (result === 'approved') {
+      const nextIndex = (project.current_stage_index || 0) + 1;
+      const nextArea = stages[nextIndex] || GLOBAL_STAGES.BILLING;
+      
+      updates = {
+        ...updates,
+        current_stage_index: nextIndex,
+        etapa_actual: nextArea,
+        etapaActual: nextArea,
+        status: nextIndex >= stages.length - 1 ? 'Finalizado' : 'En Proceso',
+        comentarios: [{
+          id: `cf-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `CLIENTE: Recibe SIN correcciones. ODT enviada a ${nextArea}.`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }, ...(project.comentarios || [])]
+      };
+      if (nextIndex >= stages.length - 1) updates.fecha_finalizado = new Date().toISOString();
+    } else {
+      const newCorrectionCount = (project.correction_count_after_presentation || 0) + 1;
+      const newRejectionCount = result === 'rejected' ? (project.client_rejection_count || 0) + 1 : (project.client_rejection_count || 0);
+      
+      updates.correction_count_after_presentation = newCorrectionCount;
+      updates.client_rejection_count = newRejectionCount;
+
+      if (result === 'rejected' || newCorrectionCount >= 3) {
+        updates.is_alarm_active = true;
+        alarmTriggered = true;
+      }
+
+      const targetArea = returnToArea || stages[project.current_stage_index - 1];
+      const targetIndex = stages.indexOf(targetArea);
+
+      updates = {
+        ...updates,
+        current_stage_index: targetIndex,
+        etapa_actual: targetArea,
+        etapaActual: targetArea,
+        status: 'Correcciones',
+        comentarios: [{
+          id: `cf-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `CLIENTE: ${result === 'rejected' ? 'RECHAZADA' : 'Recibe CON correcciones'}. Regresando a [${targetArea}]. Feedback: ${feedback}`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }, ...(project.comentarios || [])]
+      };
+
+      const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+      if (targetLeader) {
+        await createNotification({
+          userId: targetLeader.id,
+          title: alarmTriggered ? '🚨 ALARMA CRÍTICA: RECHAZO/CORRECCIÓN CLIENTE' : '⚠️ CORRECCIÓN CLIENTE',
+          message: `La ODT ${projectId} requiere cambios urgentes tras presentación. Área: ${targetArea}. Feedback: ${feedback}`,
+          type: 'sla_alert',
+          projectId: projectId
+        });
+      }
+
+      if (alarmTriggered) {
+        const involvedUserIds = new Set<string>();
+        project.asignaciones?.forEach(a => involvedUserIds.add(a.usuarioId));
+        if (project.ownerId) involvedUserIds.add(project.ownerId);
+        
+        for (const uid of involvedUserIds) {
+          await createNotification({
+            userId: uid,
+            title: '🚨 ALARMA GLOBAL: FALLO EN CALIDAD',
+            message: `La ODT ${projectId} ha sido rechazada o tiene múltiples correcciones. Revisión inmediata requerida.`,
+            type: 'sla_alert',
+            projectId: projectId
+          });
+        }
+      }
+    }
+
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
+  const manageUser = async (userData: Partial<User>) => {
+    if (!db || !userData.username) throw new Error("Datos incompletos.");
+    const dbKey = escapeFirebaseKey(userData.username);
+    await set(ref(db, `users/${dbKey}`), { ...userData, username: userData.username.toLowerCase(), createdAt: new Date().toISOString() });
+  };
+
+  const toggleUserStatus = async (userId: string, active: boolean) => {
+    if (!db) return;
+    await update(ref(db, `users/${userId}`), { active });
+  };
+
+  const addTraceabilityComment = async (projectId: string, text: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const newComment: ProjectComment = {
+      id: `comm-${Date.now()}`,
+      authorId: user.id,
+      authorName: user.name,
+      text: text,
+      createdAt: new Date().toISOString(),
+      isSystemEvent: false
+    };
+
+    const updates: any = {
+      comentarios: [newComment, ...(project.comentarios || [])],
+      updatedAt: new Date().toISOString()
+    };
+
+    await update(ref(db, `projects/${projectId}`), updates);
+
+    // Notificación a quien dejó el último material
+    const lastDelivery = project.delivery_history?.[0];
+    if (lastDelivery && lastDelivery.authorId !== user.id) {
+      await createNotification({
+        userId: lastDelivery.authorId,
+        title: '💬 NUEVO COMENTARIO EN ODT',
+        message: `${user.name} ha dejado un comentario en la ODT ${projectId}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+        type: 'system',
+        projectId: projectId
+      });
+    }
+  };
+
+  const updateBilling = async (projectId: string, facturado: boolean, justification?: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    const newComment = {
+      id: `bill-${Date.now()}`,
+      authorId: user.id,
+      authorName: user.name,
+      text: `Facturación: ${facturado ? "SÍ" : "NO"}. Nota: ${justification || 'Sin detalle'}`,
+      createdAt: new Date().toISOString(),
+      isSystemEvent: true
+    };
+    await update(ref(db, `projects/${projectId}`), { 
+      facturado, 
+      justificacion_no_facturado: justification || "", 
+      updatedAt: new Date().toISOString(),
+      comentarios: [newComment, ...(project?.comentarios || [])]
+    });
+  };
+
+  const updatePaymentStatus = async (projectId: string, pagado: boolean) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    const newComment = {
+      id: `pay-${Date.now()}`,
+      authorId: user.id,
+      authorName: user.name,
+      text: `Pago marcado como: ${pagado ? "PAGADO" : "PENDIENTE"}`,
+      createdAt: new Date().toISOString(),
+      isSystemEvent: true
+    };
+    await update(ref(db, `projects/${projectId}`), { 
+      pagado, 
+      updatedAt: new Date().toISOString(),
+      comentarios: [newComment, ...(project?.comentarios || [])]
+    });
+  };
+
+  const checkSLA = (project: Project) => {
+    const lastUpdate = new Date(project.updatedAt || project.createdAt);
+    const hours = (new Date().getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
+    return { isAlert: project.status !== 'Finalizado' && hours > 72, reason: hours > 72 ? 'Estancado > 72h' : undefined };
+  };
+
+  const delegateProject = async (projectId: string, area: string, userId: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    const newAsignaciones = [...(project.asignaciones || []).filter(a => a.area !== area), { area, usuarioId: userId, status: 'en_progreso' }];
+    await update(ref(db, `projects/${projectId}`), { asignaciones: newAsignaciones, updatedAt: new Date().toISOString() });
+
+    // Notificación para el usuario asignado
+    await createNotification({
+      userId: userId,
+      title: '🎯 NUEVA ASIGNACIÓN',
+      message: `Se te ha asignado la ODT ${projectId} para el área de ${area}.`,
+      type: 'assignment',
+      projectId: projectId
+    });
+  };
+
+  const reassignProjectAndFolder = async (projectId: string, clientId: string, newOwnerId: string, portfolio: boolean = false) => {
+    if (!db || !user) return;
+    const updates: any = {};
+    if (portfolio) {
+      updates[`clients/${clientId}/ownerId`] = newOwnerId;
+      projects.filter(p => p.clientId === clientId).forEach(p => updates[`projects/${p.id}/ownerId`] = newOwnerId);
+    } else {
+      updates[`projects/${projectId}/ownerId`] = newOwnerId;
+    }
+    await update(ref(db), updates);
+  };
+
+  const addMaterial = async (projectId: string, materialData: Omit<Material, 'id' | 'creadoPor' | 'fechaCreacion'>) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const newMaterial: Material = {
+      ...materialData,
+      id: `mat-${Date.now()}`,
+      creadoPor: user.id,
+      fechaCreacion: new Date().toISOString()
+    };
+
+    const updatedMateriales = [...(project.materiales || []), newMaterial];
+    await update(ref(db, `projects/${projectId}`), { 
+      materiales: updatedMateriales,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  const updateMaterialStatus = async (projectId: string, materialId: string, newStatus: Material['estado']) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedMateriales = (project.materiales || []).map(m => 
+      m.id === materialId ? { ...m, estado: newStatus } : m
+    );
+
+    const allApproved = updatedMateriales.every(m => m.estado === 'Aprobado/Publicado');
+    
+    const updates: any = {
+      materiales: updatedMateriales,
+      updatedAt: new Date().toISOString()
+    };
+
+    // If all materials are approved and it's a Parrilla, we can auto-advance or just leave it to the user.
+    // The requirement says: "Una vez dado el Ok se termina la ODT principal."
+    if (allApproved && updatedMateriales.length > 0 && project.category === 'PARRILLA RRSS') {
+      const stages = getRoadmapStages(project);
+      updates.status = 'Finalizado';
+      updates.fecha_finalizado = new Date().toISOString();
+      updates.current_stage_index = stages.length - 1;
+      updates.etapa_actual = stages[stages.length - 1];
+      updates.etapaActual = stages[stages.length - 1];
+      updates.comentarios = [{
+        id: `sys-${Date.now()}`,
+        authorId: user.id,
+        authorName: user.name,
+        text: 'Todos los materiales han sido aprobados/publicados. ODT Finalizada automáticamente.',
+        createdAt: new Date().toISOString(),
+        isSystemEvent: true
+      }, ...(project.comentarios || [])];
+    }
+
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
+  return (
+    <ODTContext.Provider value={{ 
+      user, projects, clients, users, notifications, loading, login, logout, 
+      updateProjectStatus: async () => {}, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
+      processQA, 
+      processAccountsReview,
+      submitForPresentation,
+      processClientFeedback,
+      updateBilling, updatePaymentStatus,
+      checkSLA, delegateProject, reassignProjectAndFolder, addClient: async (n, notes) => {
+        const clientId = `CL-${Date.now()}`;
+        await set(ref(db, `clients/${clientId}`), { id: clientId, name: n.trim(), notes: notes || '', ownerId: user?.id || 'system', createdAt: new Date().toISOString() });
+      }, 
+      addProject, 
+      addTraceabilityComment,
+      removeProject, manageUser, toggleUserStatus, advanceProjectStage, getRoadmapStages,
+      addMaterial, updateMaterialStatus, markNotificationAsRead, clearNotifications
+    }}>
+      {children}
+    </ODTContext.Provider>
+  );
+};
+
+export const useODT = () => {
+  const context = useContext(ODTContext);
+  if (!context) throw new Error('useODT error');
+  return context;
+};

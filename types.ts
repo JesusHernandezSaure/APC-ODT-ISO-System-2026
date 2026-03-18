@@ -1,0 +1,156 @@
+
+export enum UserRole {
+  Admin = 'Admin',
+  Cuentas_Lider = 'Cuentas_Lider',
+  Cuentas_Opera = 'Cuentas_Opera',
+  Lider_Operativo = 'Lider_Operativo',
+  Operativo = 'Operativo',
+  Correccion = 'Correccion',
+  QA_Opera = 'QA_Opera'
+}
+
+export interface User {
+  id: string; 
+  name: string;
+  username: string;
+  password?: string;
+  department: string;
+  role: UserRole;
+  active: boolean;
+  createdAt?: string;
+}
+
+export interface ProjectComment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+  isSystemEvent?: boolean;
+}
+
+export interface ProjectAssignment {
+  area: string;
+  usuarioId: string;
+  status: 'pendiente' | 'en_progreso' | 'completado';
+}
+
+export interface Material {
+  id: string;
+  nombre: string;
+  tipo: string;
+  redSocial: string;
+  estado: 'Pendiente Diseño' | 'En Diseño' | 'Pendiente Corrección' | 'En Corrección' | 'Pendiente OK Cliente' | 'Aprobado/Publicado';
+  creadoPor: string;
+  fechaCreacion: string;
+}
+
+export interface Project {
+  id: string;
+  clientId: string;
+  empresa: string;
+  marca: string;
+  producto: string;
+  etapa_actual: string;
+  category: string;
+  subCategory: string;
+  referenceLinks: string[];
+  status: 'Borrador' | 'En Proceso' | 'Correcciones' | 'QA' | 'Finalizado' | 'Cancelado';
+  correccion_ok: boolean;
+  areas_seleccionadas: string[];
+  asignaciones: ProjectAssignment[];
+  tracking: any[];
+  comentarios: ProjectComment[];
+  materiales?: Material[];
+  monto_proyectado: number;
+  brief: string;
+  facturado?: boolean;
+  pagado?: boolean;
+  justificacion_no_facturado?: string;
+  ownerId?: string;
+  createdAt: string;
+  updatedAt: string;
+  fecha_finalizado?: string;
+  current_stage_index: number;
+  last_delivery_link?: string;
+  last_delivery_comment?: string;
+  delivery_history?: { link: string; comment: string; area: string; date: string; authorId: string; authorName: string }[];
+  // New quality control fields
+  accounts_approval_ok?: boolean;
+  presentation_link?: string;
+  presentation_version?: string;
+  presentation_date?: string;
+  client_feedback?: 'approved' | 'approved_with_corrections' | 'rejected';
+  correction_count_after_presentation?: number;
+  client_rejection_count?: number;
+  is_alarm_active?: boolean;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  notes?: string;
+  ownerId: string;
+  createdAt: string;
+}
+
+export type ViewState = 
+  | 'login' 
+  | 'dashboard' 
+  | 'leader-dashboard'
+  | 'my-projects' 
+  | 'clients' 
+  | 'users' 
+  | 'qa-box' 
+  | 'finances' 
+  | 'project-detail';
+
+export interface LoginResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'new_odt' | 'assignment' | 'sla_alert' | 'system';
+  projectId?: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface ODTContextType {
+  user: User | null;
+  projects: Project[];
+  clients: Client[];
+  users: User[];
+  notifications: Notification[];
+  loading: boolean;
+  login: (username: string, pass: string) => Promise<LoginResult>;
+  logout: () => void;
+  updateProjectStatus: (projectId: string, newStatus: Project['status'], comment: string) => Promise<void>;
+  updateBrief: (projectId: string, content: string) => Promise<void>;
+  processQA: (projectId: string, approved: boolean, feedback: string) => Promise<string | void>;
+  processAccountsReview: (projectId: string, approved: boolean, feedback: string, returnToArea?: string) => Promise<void>;
+  submitForPresentation: (projectId: string, link: string, version: string) => Promise<void>;
+  processClientFeedback: (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string) => Promise<void>;
+  updateBilling: (projectId: string, facturado: boolean, justification?: string) => Promise<void>;
+  updatePaymentStatus: (projectId: string, pagado: boolean) => Promise<void>;
+  checkSLA: (project: Project) => { isAlert: boolean; reason?: string };
+  delegateProject: (projectId: string, area: string, userId: string) => Promise<void>;
+  reassignProjectAndFolder: (projectId: string, clientId: string, newOwnerId: string, portfolio?: boolean) => Promise<void>;
+  addClient: (name: string, notes?: string) => Promise<void>;
+  addProject: (project: Partial<Project>) => Promise<void>;
+  addTraceabilityComment: (projectId: string, text: string) => Promise<void>;
+  removeProject: (projectId: string) => Promise<void>;
+  manageUser: (userData: Partial<User>) => Promise<void>;
+  toggleUserStatus: (userId: string, active: boolean) => Promise<void>;
+  advanceProjectStage: (projectId: string, comment: string) => Promise<void>;
+  getRoadmapStages: (project: Project) => string[];
+  addMaterial: (projectId: string, material: Omit<Material, 'id' | 'creadoPor' | 'fechaCreacion'>) => Promise<void>;
+  updateMaterialStatus: (projectId: string, materialId: string, newStatus: Material['estado']) => Promise<void>;
+  markNotificationAsRead: (notificationId: string) => Promise<void>;
+  clearNotifications: () => Promise<void>;
+}

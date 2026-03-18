@@ -1,0 +1,7 @@
+{
+  "name": "ISO 9001:2015 ODT Management System",
+  "description": "A high-performance ODT (Technical Work Order) management system designed for ISO 9001:2015 compliance, featuring real-time AI auditing and tracking.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

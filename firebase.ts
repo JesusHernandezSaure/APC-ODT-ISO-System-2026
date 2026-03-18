@@ -3,15 +3,15 @@ import { getDatabase } from "firebase/database";
 
 // Datos exactos proporcionados por el usuario
 const firebaseConfig = {
-  apiKey: "AIzaSyDnhOVu5jaJBp1QXWd0nYBsNipWyQ_46_A",
-  authDomain: "apc-odt-app-ii.firebaseapp.com",
-  projectId: "apc-odt-app-ii",
-  storageBucket: "apc-odt-app-ii.firebasestorage.app",
-  messagingSenderId: "1074990701232",
-  appId: "1:1074990701232:web:074bccc2e8e2eb8de5b975",
-  measurementId: "G-935XEXM0NC",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDnhOVu5jaJBp1QXWd0nYBsNipWyQ_46_A",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "apc-odt-app-ii.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "apc-odt-app-ii",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "apc-odt-app-ii.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1074990701232",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1074990701232:web:074bccc2e8e2eb8de5b975",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-935XEXM0NC",
   // URL base estandarizada
-  databaseURL: "https://apc-odt-app-ii-default-rtdb.firebaseio.com"
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || "https://apc-odt-app-ii-default-rtdb.firebaseio.com"
 };
 
 const app = initializeApp(firebaseConfig);

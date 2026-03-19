@@ -2,6 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import { useODT } from './ODTContext';
 import { UserRole, Project } from './types';
+import { normalizeString } from './workflowConfig';
 
 const LeaderDashboard: React.FC = () => {
   const { user, projects, users, checkSLA, delegateProject } = useODT();
@@ -10,14 +11,14 @@ const LeaderDashboard: React.FC = () => {
   const leaderArea = useMemo(() => {
     if (user?.department === 'QA' || user?.role === UserRole.Correccion) return 'QA';
     if (user?.department === 'Creativo') return 'Creativo';
-    if (user?.department === 'Diseño') return 'Diseño';
+    if (user?.department === 'Arte') return 'Arte';
     if (user?.department === 'Digital') return 'Digital';
     return user?.department || '';
   }, [user]);
 
   const teamMembers = useMemo(() => {
     if (!user || !users) return [];
-    return users.filter(u => u.department === user.department);
+    return users.filter(u => normalizeString(u.department) === normalizeString(user.department));
   }, [user, users]);
 
   const areaProjects = useMemo(() => {
@@ -33,7 +34,9 @@ const LeaderDashboard: React.FC = () => {
       });
     } else {
       // Otros líderes operativos ven ODTs activas de su área ISO
-      filtered = projects.filter(p => p.areas_seleccionadas?.includes(leaderArea));
+      filtered = projects.filter(p => 
+        p.areas_seleccionadas?.some(area => normalizeString(area) === normalizeString(leaderArea))
+      );
     }
 
     if (memberFilter !== 'all') {
@@ -46,7 +49,7 @@ const LeaderDashboard: React.FC = () => {
   if (!user || !projects || !users) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apc-green"></div>
       </div>
     );
   }
@@ -60,7 +63,7 @@ const LeaderDashboard: React.FC = () => {
         </div>
         <div className="flex flex-col items-end">
           <label className="text-[9px] font-black text-slate-400 uppercase mb-1 mr-1">Filtrar por Colaborador</label>
-          <select className="bg-white border rounded-xl px-4 py-2 text-xs font-bold outline-none shadow-sm focus:ring-2 focus:ring-blue-500" value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}>
+          <select className="bg-white border rounded-xl px-4 py-2 text-xs font-bold outline-none shadow-sm focus:ring-2 focus:ring-apc-pink" value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}>
             <option value="all">TODO EL EQUIPO</option>
             {teamMembers.map(m => <option key={m.id} value={m.id}>{m.id === user?.id ? `YO (${(m.name || '').toUpperCase()})` : (m.name || '').toUpperCase()}</option>)}
           </select>
@@ -74,14 +77,14 @@ const LeaderDashboard: React.FC = () => {
           const isMe = m.id === user?.id;
           
           return (
-            <div key={m.id} className={`p-5 rounded-2xl border transition-all shadow-sm hover:shadow-md ${isMe ? 'bg-blue-50/50 border-blue-200' : 'bg-white border-slate-100'}`}>
+            <div key={m.id} className={`p-5 rounded-2xl border transition-all shadow-sm hover:shadow-md ${isMe ? 'bg-apc-green/5 border-apc-green/20' : 'bg-white border-slate-100'}`}>
               <div className="flex justify-between items-start mb-3">
-                <p className={`text-xs font-black truncate pr-2 ${isMe ? 'text-blue-700' : 'text-slate-800'}`}>
+                <p className={`text-xs font-black truncate pr-2 ${isMe ? 'text-apc-green' : 'text-slate-800'}`}>
                   {isMe ? 'Mi Carga (Líder)' : m.name}
                 </p>
                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
-                  m.role.includes('Lider') || m.role === UserRole.Correccion ? 'bg-blue-600 text-white' :
-                  m.role === UserRole.QA_Opera ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
+                  m.role.includes('Lider') || m.role === UserRole.Correccion ? 'bg-apc-green text-white' :
+                  m.role === UserRole.QA_Opera ? 'bg-apc-pink/10 text-apc-pink' : 'bg-slate-100 text-slate-500'
                 }`}>
                   {m.role.includes('Lider') || m.role === UserRole.Correccion ? 'LÍDER' : m.role === UserRole.QA_Opera ? 'QA' : 'OP'}
                 </span>
@@ -89,7 +92,7 @@ const LeaderDashboard: React.FC = () => {
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Carga: {load} ODTs Activas</p>
               <div className="w-full bg-slate-200/50 h-2 rounded-full mt-3 overflow-hidden border border-slate-100">
                 <div 
-                  className={`h-full transition-all duration-500 ${load > 5 ? 'bg-rose-500' : load > 3 ? 'bg-amber-500' : 'bg-blue-500'}`} 
+                  className={`h-full transition-all duration-500 ${load > 5 ? 'bg-apc-pink' : load > 3 ? 'bg-amber-500' : 'bg-apc-green'}`} 
                   style={{width: `${Math.min((load/8)*100, 100)}%`}}
                 ></div>
               </div>
@@ -117,30 +120,30 @@ const LeaderDashboard: React.FC = () => {
             ) : (
               areaProjects.map(p => {
                 const currentAssignmentArea = (user?.role === UserRole.Correccion || user?.department === 'QA') ? 'QA' : leaderArea;
-                const currentAssignment = p.asignaciones?.find(a => a.area === currentAssignmentArea);
+                const currentAssignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(currentAssignmentArea));
                 const isAssignedToMe = currentAssignment?.usuarioId === user?.id;
 
                 return (
-                  <tr key={p.id} className={`hover:bg-slate-50/80 transition-colors ${isAssignedToMe ? 'bg-blue-50/20' : ''}`}>
+                  <tr key={p.id} className={`hover:bg-slate-50/80 transition-colors ${isAssignedToMe ? 'bg-apc-green/5' : ''}`}>
                     <td className="px-6 py-4">
-                      <p className="font-mono font-black text-blue-600 text-xs">{p.id}</p>
+                      <p className="font-mono font-black text-apc-pink text-xs">{p.id}</p>
                       <p className="text-[10px] font-bold text-slate-800 uppercase truncate max-w-[200px]">{p.empresa}</p>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                         <div className={`w-2 h-2 rounded-full ${currentAssignment ? 'bg-blue-600 shadow-sm' : 'bg-rose-300 animate-pulse'}`}></div>
-                         <span className={`text-xs font-bold uppercase ${currentAssignment ? 'text-slate-600' : 'text-rose-400 italic'}`}>
+                         <div className={`w-2 h-2 rounded-full ${currentAssignment ? 'bg-apc-green shadow-sm' : 'bg-apc-pink/30 animate-pulse'}`}></div>
+                         <span className={`text-xs font-bold uppercase ${currentAssignment ? 'text-slate-600' : 'text-apc-pink italic'}`}>
                            {users.find(m => m.id === currentAssignment?.usuarioId)?.name || 'PENDIENTE ASIGNAR'}
                          </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${p.status === 'QA' ? 'bg-amber-100 text-amber-700 shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${p.status === 'QA' ? 'bg-apc-pink/10 text-apc-pink shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
                         {p.status}
                       </span>
                       <div className="text-[7px] font-black text-slate-400 mt-0.5 uppercase">{(p.etapa_actual || (p as any).etapaActual)}</div>
                       {p.category === 'PARRILLA RRSS' && p.materiales && p.materiales.length > 0 && (
-                        <div className="text-[8px] font-bold text-blue-500 mt-1 uppercase tracking-widest">
+                        <div className="text-[8px] font-bold text-apc-pink mt-1 uppercase tracking-widest">
                           {p.materiales.filter(m => m.estado === 'Aprobado/Publicado').length}/{p.materiales.length} Mats
                         </div>
                       )}
@@ -148,7 +151,7 @@ const LeaderDashboard: React.FC = () => {
                     <td className="px-6 py-4 text-right">
                        <select 
                          className={`border-none rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all outline-none ${
-                           currentAssignment ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-900 text-white hover:bg-slate-800 animate-bounce'
+                           currentAssignment ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-apc-green text-white hover:bg-apc-green/80 animate-bounce'
                          }`} 
                          onChange={(e) => {
                            if (e.target.value) delegateProject(p.id, currentAssignmentArea, e.target.value);

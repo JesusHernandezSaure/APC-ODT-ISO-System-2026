@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ref, onValue, update, get, set } from "firebase/database";
 import { db } from './firebase';
 import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material } from './types';
-import { GLOBAL_STAGES, calculateRoadmap } from './workflowConfig';
+import { GLOBAL_STAGES, calculateRoadmap, getPriorityInfo, normalizeString } from './workflowConfig';
 
 const ODTContext = createContext<ODTContextType | undefined>(undefined);
 
@@ -124,26 +124,25 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await update(ref(db), updates);
   };
 
-  // SLA Background Check
+  // SLA and Priority Background Check
   useEffect(() => {
     if (!user || projects.length === 0 || !db) return;
 
-    const checkSLAs = async () => {
+    const checkAlerts = async () => {
       const now = new Date();
       for (const p of projects) {
         if (p.status === 'Finalizado' || p.status === 'Cancelado') continue;
 
+        // 1. SLA Check (Estancamiento)
         const lastUpdate = new Date(p.updatedAt || p.createdAt);
-        const diffDays = Math.floor((now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
+        const diffDaysSLA = Math.floor((now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
 
-        if (diffDays >= 3) {
-          // 1. Notificación para el responsable actual
+        if (diffDaysSLA >= 3) {
           const stages = getRoadmapStages(p);
           const currentArea = stages[p.current_stage_index || 0];
           const currentAssignment = p.asignaciones?.find(a => a.area === currentArea);
 
           if (currentAssignment) {
-            const notifKey = `SLA-USER-${p.id}-${currentAssignment.usuarioId}`;
             const alreadyNotified = notifications.some(n => n.userId === currentAssignment.usuarioId && n.projectId === p.id && n.type === 'sla_alert');
             if (!alreadyNotified) {
               await createNotification({
@@ -156,7 +155,6 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
-          // 2. Notificación para el líder del área
           const areaLeader = users.find(u => u.department === currentArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
           if (areaLeader) {
             const alreadyNotified = notifications.some(n => n.userId === areaLeader.id && n.projectId === p.id && n.type === 'sla_alert' && n.title.includes('RETRASO EN ÁREA'));
@@ -171,10 +169,33 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
         }
+
+        // 2. Priority Check (Fecha de Entrega)
+        if (p.fecha_entrega) {
+          const priority = getPriorityInfo(p.fecha_entrega);
+          if (priority.level >= 1 && priority.level <= 3) {
+            // Notificar al Ejecutivo (Owner)
+            if (p.ownerId) {
+              const alertType = priority.level === 2 ? 'orange' : 'yellow';
+              const alertTitle = `⚠️ PRIORIDAD ${priority.text.toUpperCase()} (${alertType.toUpperCase()})`;
+              const alreadyNotified = notifications.some(n => n.userId === p.ownerId && n.projectId === p.id && n.title === alertTitle);
+              
+              if (!alreadyNotified) {
+                await createNotification({
+                  userId: p.ownerId,
+                  title: alertTitle,
+                  message: `La ODT ${p.id} está a ${4 - priority.level} día(s) de su fecha de entrega.`,
+                  type: 'sla_alert',
+                  projectId: p.id
+                });
+              }
+            }
+          }
+        }
       }
     };
 
-    const timer = setTimeout(checkSLAs, 10000); // Check 10 seconds after load
+    const timer = setTimeout(checkAlerts, 10000); // Check 10 seconds after load
     return () => clearTimeout(timer);
   }, [user, projects, users, notifications]);
 
@@ -197,7 +218,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `ref-${Date.now()}`,
           authorId: user.id,
           authorName: user.name,
-          text: `ENLACES DE REFERENCIA INICIALES: ${projectData.referenceLinks.join(', ')}`,
+          text: `ENLACE GENERAL DEL PROYECTO: ${projectData.referenceLinks.join(', ')}`,
           createdAt: new Date().toISOString(),
           isSystemEvent: true
         }] : [])
@@ -278,7 +299,19 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Notificación para el líder de la siguiente área
     const nextArea = proximaArea;
-    const nextLeader = users.find(u => u.department === nextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+    const nextLeader = users.find(u => {
+      const userDept = normalizeString(u.department || '');
+      const normalizedNextArea = normalizeString(nextArea);
+      
+      if (normalizedNextArea.includes('qa')) {
+        return userDept === 'qa' || u.role === UserRole.Correccion;
+      }
+      if (normalizedNextArea.includes('cuentas')) {
+        return userDept === 'cuentas';
+      }
+      return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion);
+    });
+
     if (nextLeader) {
       await createNotification({
         userId: nextLeader.id,
@@ -347,7 +380,19 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await update(ref(db, `projects/${projectId}`), updates);
 
       // Notificación para el líder de la siguiente área
-      const nextLeader = users.find(u => u.department === proximaAreaCalculada && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+      const nextLeader = users.find(u => {
+        const userDept = normalizeString(u.department || '');
+        const normalizedNextArea = normalizeString(proximaAreaCalculada);
+        
+        if (normalizedNextArea.includes('qa')) {
+          return userDept === 'qa' || u.role === UserRole.Correccion;
+        }
+        if (normalizedNextArea.includes('cuentas')) {
+          return userDept === 'cuentas';
+        }
+        return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion);
+      });
+
       if (nextLeader) {
         await createNotification({
           userId: nextLeader.id,
@@ -764,10 +809,26 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       submitForPresentation,
       processClientFeedback,
       updateBilling, updatePaymentStatus,
-      checkSLA, delegateProject, reassignProjectAndFolder, addClient: async (n, notes) => {
+      checkSLA, delegateProject, reassignProjectAndFolder, 
+      addClient: async (n, notes) => {
+        if (!db || !user) return;
         const clientId = `CL-${Date.now()}`;
-        await set(ref(db, `clients/${clientId}`), { id: clientId, name: n.trim(), notes: notes || '', ownerId: user?.id || 'system', createdAt: new Date().toISOString() });
+        await set(ref(db, `clients/${clientId}`), { 
+          id: clientId, 
+          name: n.trim(), 
+          notes: notes || '', 
+          ownerId: user.id, 
+          createdAt: new Date().toISOString() 
+        });
       }, 
+      updateClient: async (clientId, data) => {
+        if (!db) return;
+        await update(ref(db, `clients/${clientId}`), { ...data });
+      },
+      removeClient: async (clientId) => {
+        if (!db) return;
+        await set(ref(db, `clients/${clientId}`), null);
+      },
       addProject, 
       addTraceabilityComment,
       removeProject, manageUser, toggleUserStatus, advanceProjectStage, getRoadmapStages,

@@ -40,7 +40,7 @@ export interface Material {
   nombre: string;
   tipo: string;
   redSocial: string;
-  estado: 'Pendiente Diseño' | 'En Diseño' | 'Pendiente Corrección' | 'En Corrección' | 'Pendiente OK Cliente' | 'Aprobado/Publicado';
+  estado: 'Pendiente Arte' | 'En Arte' | 'Pendiente Corrección' | 'En Corrección' | 'Pendiente OK Cliente' | 'Aprobado/Publicado';
   creadoPor: string;
   fechaCreacion: string;
 }
@@ -70,6 +70,7 @@ export interface Project {
   ownerId?: string;
   createdAt: string;
   updatedAt: string;
+  fecha_entrega?: string;
   fecha_finalizado?: string;
   current_stage_index: number;
   last_delivery_link?: string;
@@ -142,6 +143,8 @@ export interface ODTContextType {
   delegateProject: (projectId: string, area: string, userId: string) => Promise<void>;
   reassignProjectAndFolder: (projectId: string, clientId: string, newOwnerId: string, portfolio?: boolean) => Promise<void>;
   addClient: (name: string, notes?: string) => Promise<void>;
+  updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
+  removeClient: (clientId: string) => Promise<void>;
   addProject: (project: Partial<Project>) => Promise<void>;
   addTraceabilityComment: (projectId: string, text: string) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;

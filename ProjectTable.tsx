@@ -2,6 +2,7 @@
 import React from 'react';
 import { Project } from './types';
 import { Icons } from './constants';
+import { normalizeString, getPriorityInfo } from './workflowConfig';
 
 export const ProjectTable = ({ projects, onView, checkSLA, highlightUnassigned, users }: any) => (
   <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -12,6 +13,7 @@ export const ProjectTable = ({ projects, onView, checkSLA, highlightUnassigned, 
           <th className="px-6 py-5">Proyecto / Cliente</th>
           <th className="px-6 py-5">Responsable</th>
           <th className="px-6 py-5">Status</th>
+          <th className="px-6 py-5">Entrega / Prioridad</th>
           <th className="px-6 py-5">SLA</th>
           <th className="px-6 py-5 text-right">Acciones</th>
         </tr>
@@ -19,17 +21,18 @@ export const ProjectTable = ({ projects, onView, checkSLA, highlightUnassigned, 
       <tbody className="divide-y divide-slate-100">
         {projects?.map((p: Project) => {
           const sla = checkSLA(p);
+          const priority = getPriorityInfo(p.fecha_entrega);
           const currentStage = (p.etapa_actual || (p as any).etapaActual || '');
           const isQA = currentStage.toUpperCase().includes('QA') || p.status === 'QA';
           const targetArea = isQA ? 'QA' : currentStage;
-          const assignment = p.asignaciones?.find(a => a.area === targetArea);
+          const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
           let responsible = users?.find((u: any) => u.id === assignment?.usuarioId);
           let isLeaderFallback = false;
 
           if (!responsible) {
             // Si no hay asignación directa, el responsable es el Líder del área actual
             responsible = users?.find((u: any) => 
-              u.department === targetArea && 
+              normalizeString(u.department) === normalizeString(targetArea) && 
               (u.role === 'Lider_Operativo' || u.role === 'Correccion')
             );
             if (responsible) isLeaderFallback = true;
@@ -49,11 +52,11 @@ export const ProjectTable = ({ projects, onView, checkSLA, highlightUnassigned, 
           else if (p.status === 'QA') statusColorClass = 'bg-amber-100 text-amber-700 shadow-sm';
 
           return (
-            <tr key={p?.id} className={`hover:bg-slate-50/50 transition-all ${isUnassigned ? 'bg-amber-50/30 font-bold' : sla?.isAlert ? 'bg-pink-50/20' : ''}`}>
-              <td className="px-6 py-4 font-mono font-black text-blue-600 text-xs">
+            <tr key={p?.id} className={`hover:bg-slate-50/50 transition-all ${isUnassigned ? 'bg-amber-50/30 font-bold' : sla?.isAlert ? 'bg-apc-pink/5' : ''}`}>
+              <td className="px-6 py-4 font-mono font-black text-apc-pink text-xs">
                 {p?.id}
                 {isUnassigned && (
-                  <div className="text-[8px] text-amber-600 font-black animate-pulse mt-1 tracking-tighter uppercase">
+                  <div className="text-[8px] text-apc-green font-black animate-pulse mt-1 tracking-tighter uppercase">
                     Pendiente Asignar
                   </div>
                 )}
@@ -94,16 +97,35 @@ export const ProjectTable = ({ projects, onView, checkSLA, highlightUnassigned, 
                 )}
               </td>
               <td className="px-6 py-4">
+                <div className="flex items-center gap-2">
+                  {p.fecha_entrega && (
+                    <div className={`w-3 h-3 ${priority.shape === 'rhombus' ? 'rotate-45' : 'rounded-full'} ${priority.color} shadow-sm`} title={priority.text}></div>
+                  )}
+                  {p.fecha_entrega ? (
+                    <span className={`text-[10px] font-bold ${priority.textColor}`}>
+                      {new Date(p.fecha_entrega + 'T00:00:00').toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-300 italic">N/A</span>
+                  )}
+                </div>
+                {p.fecha_entrega && (
+                  <div className={`text-[7px] font-black uppercase mt-0.5 ${priority.textColor}`}>
+                    {priority.text}
+                  </div>
+                )}
+              </td>
+              <td className="px-6 py-4">
                 {sla?.isAlert ? (
-                  <span className="text-pink-600 text-[10px] font-black animate-pulse flex items-center gap-1">
-                    <Icons.Plus /> CRÍTICO
+                  <span className="text-apc-pink text-[10px] font-black animate-pulse flex items-center gap-1">
+                    <Icons.Plus className="w-3 h-3" /> CRÍTICO
                   </span>
                 ) : (
-                  <span className="text-emerald-500 text-[10px] font-bold uppercase tracking-widest">OK</span>
+                  <span className="text-apc-green text-[10px] font-bold uppercase tracking-widest">OK</span>
                 )}
               </td>
               <td className="px-6 py-4 text-right">
-                <button onClick={() => onView(p)} className="text-blue-600 font-black hover:text-blue-800 transition-colors text-xs border-b-2 border-transparent hover:border-blue-800 pb-0.5">DETALLE</button>
+                <button onClick={() => onView(p)} className="text-apc-pink font-black hover:text-apc-pink/80 transition-colors text-xs border-b-2 border-transparent hover:border-apc-pink/80 pb-0.5 uppercase tracking-widest">DETALLE</button>
               </td>
             </tr>
           );

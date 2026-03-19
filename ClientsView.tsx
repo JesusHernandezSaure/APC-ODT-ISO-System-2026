@@ -10,13 +10,16 @@ interface ClientsViewProps {
 }
 
 const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
-  const { user, clients, projects, users, addClient, reassignProjectAndFolder, checkSLA } = useODT();
+  const { user, clients, projects, users, addClient, updateClient, removeClient, reassignProjectAndFolder, checkSLA } = useODT();
+  const { Edit, Trash, Users: UsersIcon, Folder, Plus, ChevronLeft, Clients: ClientsIcon, Ai } = Icons;
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [creatingODTForClient, setCreatingODTForClient] = useState<Client | null>(null);
   const [transferClient, setTransferClient] = useState<Client | null>(null);
   const [targetOwner, setTargetOwner] = useState('');
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [renamingName, setRenamingName] = useState('');
 
   const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm', message: string, onConfirm?: () => void } | null>(null);
 
@@ -54,10 +57,47 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
     });
   };
 
+  const handleRenameClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClient || !renamingName.trim()) return;
+    try {
+      await updateClient(editingClient.id, { name: renamingName.trim() });
+      setEditingClient(null);
+      setRenamingName('');
+      setDialog({ type: 'alert', message: "Nombre de carpeta actualizado correctamente." });
+    } catch (error) {
+      setDialog({ type: 'alert', message: "Error al renombrar la carpeta." });
+    }
+  };
+
+  const handleDeleteClient = (client: Client) => {
+    const clientODTs = (projects || []).filter(p => p.clientId === client.id);
+    if (clientODTs.length > 0) {
+      setDialog({ 
+        type: 'alert', 
+        message: "No se puede eliminar una carpeta que contiene ODTs. Primero debe transferir o eliminar las ODTs asociadas." 
+      });
+      return;
+    }
+
+    setDialog({
+      type: 'confirm',
+      message: `¿Está seguro que desea eliminar la carpeta "${client.name}"? Esta acción no se puede deshacer.`,
+      onConfirm: async () => {
+        try {
+          await removeClient(client.id);
+          setDialog({ type: 'alert', message: "Carpeta eliminada correctamente." });
+        } catch (error) {
+          setDialog({ type: 'alert', message: "Error al eliminar la carpeta." });
+        }
+      }
+    });
+  };
+
   if (!user || !clients) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apc-green"></div>
       </div>
     );
   }
@@ -72,20 +112,20 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
               onClick={() => setViewingClient(null)}
               className="text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-widest flex items-center gap-2 mb-2 transition-colors"
             >
-              <Icons.ChevronLeft /> VOLVER A CARPETAS
+              <ChevronLeft /> VOLVER A CARPETAS
             </button>
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">{viewingClient.name}</h1>
             <p className="text-slate-500 font-medium text-sm flex items-center gap-2 mt-1">
-              <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+              <span className="w-2 h-2 bg-apc-green rounded-full"></span>
               ODTs del Cliente
             </p>
           </div>
           
           <button 
             onClick={() => setCreatingODTForClient(viewingClient)}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-black text-xs rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+            className="flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-lg shadow-apc-green/20"
           >
-            <Icons.Plus /> NUEVA ODT
+            <Plus /> NUEVA ODT
           </button>
         </header>
 
@@ -93,7 +133,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
            {clientODTs.length === 0 ? (
              <div className="text-center py-20">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                   <Icons.Folder />
+                   <Folder />
                 </div>
                 <p className="text-slate-400 italic font-medium">Esta carpeta está vacía. No hay ODTs registradas.</p>
              </div>
@@ -120,7 +160,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Archivo de Clientes</h1>
           <p className="text-slate-500 font-medium text-sm flex items-center gap-2">
-            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+            <span className="w-2 h-2 bg-apc-pink rounded-full"></span>
             Gestión de Carpetas Maestras ISO 9001
           </p>
         </div>
@@ -128,9 +168,9 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
         {canCreateClient && (
           <button 
             onClick={() => setIsCreatingClient(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-black text-xs rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+            className="flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-lg shadow-apc-green/20"
           >
-            <Icons.Plus /> NUEVA CARPETA DE CLIENTE
+            <Plus /> NUEVA CARPETA DE CLIENTE
           </button>
         )}
       </header>
@@ -139,16 +179,16 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
         {clients.length === 0 ? (
           <div className="col-span-full bg-white p-12 rounded-3xl border border-dashed border-slate-200 text-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-              <Icons.Folder />
+              <Folder />
             </div>
             <h3 className="text-lg font-black text-slate-900 mb-1">No hay carpetas de clientes</h3>
             <p className="text-slate-500 text-sm mb-6">Comienza creando la primera carpeta maestra para organizar las ODTs.</p>
             {canCreateClient && (
               <button 
                 onClick={() => setIsCreatingClient(true)}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-black text-xs rounded-xl hover:bg-blue-700 transition-all"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all"
               >
-                <Icons.Plus /> CREAR MI PRIMERA CARPETA
+                <Plus /> CREAR MI PRIMERA CARPETA
               </button>
             )}
           </div>
@@ -159,21 +199,44 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
             const owner = (users || []).find(u => u.id === client.ownerId);
             
             return (
-              <div key={client.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/30 hover:shadow-2xl hover:border-blue-100 transition-all group flex flex-col justify-between">
+              <div key={client.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/30 hover:shadow-2xl hover:border-apc-green/30 transition-all group flex flex-col justify-between">
                 <div>
                   <div className="flex justify-between items-start mb-6">
-                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white group-hover:bg-blue-600 transition-colors">
-                      <Icons.Clients />
+                    <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white group-hover:bg-apc-green transition-colors">
+                      <ClientsIcon />
                     </div>
-                    {isLeader && (
-                      <button 
-                        onClick={() => setTransferClient(client)}
-                        title="Transferir Cartera"
-                        className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-900 transition-all"
-                      >
-                        <Icons.Users />
-                      </button>
-                    )}
+                    <div className="flex gap-1">
+                      {canCreateClient && (
+                        <>
+                          <button 
+                            onClick={() => {
+                              setEditingClient(client);
+                              setRenamingName(client.name);
+                            }}
+                            title="Renombrar Carpeta"
+                            className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-apc-green transition-all"
+                          >
+                            <Edit />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteClient(client)}
+                            title="Eliminar Carpeta"
+                            className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-apc-pink transition-all"
+                          >
+                            <Trash />
+                          </button>
+                        </>
+                      )}
+                      {isLeader && (
+                        <button 
+                          onClick={() => setTransferClient(client)}
+                          title="Transferir Cartera"
+                          className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-900 transition-all"
+                        >
+                          <UsersIcon />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <h3 className="text-xl font-black text-slate-800 leading-tight mb-1 truncate">{client.name}</h3>
                   <p className="text-[10px] text-slate-400 font-black mb-4 uppercase truncate">Ejecutivo: {owner?.name || 'SISTEMA'}</p>
@@ -195,7 +258,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                   onClick={() => setViewingClient(client)}
                   className="w-full py-3 bg-slate-50 text-slate-900 font-black text-[10px] uppercase tracking-widest rounded-xl border border-slate-100 hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center gap-2"
                 >
-                  <Icons.Folder /> VER ODTs DEL CLIENTE
+                  <Folder /> VER ODTs DEL CLIENTE
                 </button>
               </div>
             );
@@ -211,11 +274,30 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
             <form onSubmit={handleCreateClient} className="space-y-4">
                <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Nombre de Empresa</label>
-                  <input autoFocus value={newClientName} onChange={e => setNewClientName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold" placeholder="Ejem: Laboratorios Roche S.A." />
+                  <input autoFocus value={newClientName} onChange={e => setNewClientName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-bold" placeholder="Ejem: Laboratorios Roche S.A." />
                </div>
                <div className="flex gap-3 pt-4">
                   <button type="button" onClick={() => setIsCreatingClient(false)} className="flex-1 py-3 text-xs font-black text-slate-400 uppercase hover:text-slate-600">Cancelar</button>
-                  <button type="submit" className="flex-1 py-3 bg-slate-900 text-white font-black text-xs rounded-xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">CREAR CARPETA</button>
+                  <button type="submit" className="flex-1 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-xl shadow-apc-green/20">CREAR CARPETA</button>
+               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingClient && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn">
+            <h2 className="text-2xl font-black text-slate-900 mb-2">Renombrar Carpeta</h2>
+            <p className="text-xs text-slate-500 font-medium mb-6">Modifique el nombre de la carpeta maestra.</p>
+            <form onSubmit={handleRenameClient} className="space-y-4">
+               <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Nuevo Nombre</label>
+                  <input autoFocus value={renamingName} onChange={e => setRenamingName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-bold" placeholder="Nombre de la empresa" />
+               </div>
+               <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setEditingClient(null)} className="flex-1 py-3 text-xs font-black text-slate-400 uppercase hover:text-slate-600">Cancelar</button>
+                  <button type="submit" className="flex-1 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-xl shadow-apc-green/20">GUARDAR CAMBIOS</button>
                </div>
             </form>
           </div>
@@ -262,8 +344,8 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       {dialog && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn text-center">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${dialog.type === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
-              <Icons.Ai />
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${dialog.type === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-apc-green/10 text-apc-green'}`}>
+              <Ai />
             </div>
             <h3 className="text-xl font-black text-slate-900 mb-2">
               {dialog.type === 'confirm' ? 'Confirmar Acción' : 'Notificación'}
@@ -283,7 +365,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                   if (dialog.onConfirm) dialog.onConfirm();
                   setDialog(null);
                 }}
-                className={`flex-1 py-3 text-white font-black text-xs rounded-xl transition-all shadow-lg ${dialog.type === 'confirm' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}
+                className={`flex-1 py-3 text-white font-black text-xs rounded-xl transition-all shadow-lg ${dialog.type === 'confirm' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' : 'bg-apc-green hover:bg-apc-green/80 shadow-apc-green/20'}`}
               >
                 {dialog.type === 'confirm' ? 'CONFIRMAR' : 'ENTENDIDO'}
               </button>

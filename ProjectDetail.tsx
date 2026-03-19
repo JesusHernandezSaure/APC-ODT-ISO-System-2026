@@ -6,7 +6,7 @@ import { useODT } from './ODTContext';
 import { Project, UserRole, Material } from './types';
 import { Icons } from './constants';
 import { auditProjectISO } from './services/geminiService';
-import { calculateRoadmap, GLOBAL_STAGES } from './workflowConfig';
+import { calculateRoadmap, GLOBAL_STAGES, getPriorityInfo } from './workflowConfig';
 
 interface ProjectDetailProps {
   project: Project;
@@ -56,6 +56,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const roadmapStages = useMemo(() => {
     return calculateRoadmap(project.areas_seleccionadas || []);
   }, [project.areas_seleccionadas]);
+
+  const priority = getPriorityInfo(project.fecha_entrega);
 
   const currentIdx = project.current_stage_index || 0;
   const currentStageName = roadmapStages[currentIdx];
@@ -209,7 +211,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       nombre: newMatNombre,
       tipo: newMatTipo,
       redSocial: newMatRed,
-      estado: 'Pendiente Diseño'
+      estado: 'Pendiente Arte'
     });
     setNewMatNombre('');
     setShowNewMaterial(false);
@@ -225,14 +227,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     const actions: { label: string, nextStatus: Material['estado'], colorClass: string }[] = [];
     
     const isDigital = user.department === 'Digital' || user.role === UserRole.Admin;
-    const isDiseno = user.department === 'Diseño' || user.role === UserRole.Admin;
-    const isMedico = user.department === 'Medical MKT' || user.department === 'Medical Content' || user.role === UserRole.Correccion || user.role === UserRole.Admin;
+    const isDiseno = user.department === 'Arte' || user.role === UserRole.Admin;
+    const isMedico = user.department === 'Médico' || user.role === UserRole.Correccion || user.role === UserRole.Admin;
 
     switch (material.estado) {
-      case 'Pendiente Diseño':
-        if (isDiseno) actions.push({ label: 'Tomar Diseño', nextStatus: 'En Diseño', colorClass: 'bg-blue-600' });
+      case 'Pendiente Arte':
+        if (isDiseno) actions.push({ label: 'Tomar Arte', nextStatus: 'En Arte', colorClass: 'bg-blue-600' });
         break;
-      case 'En Diseño':
+      case 'En Arte':
         if (isDiseno) actions.push({ label: 'Enviar a Corrección', nextStatus: 'Pendiente Corrección', colorClass: 'bg-amber-500' });
         break;
       case 'Pendiente Corrección':
@@ -241,13 +243,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       case 'En Corrección':
         if (isMedico) {
           actions.push({ label: 'Aprobar (OK Médico)', nextStatus: 'Pendiente OK Cliente', colorClass: 'bg-emerald-600' });
-          actions.push({ label: 'Rechazar (A Diseño)', nextStatus: 'Pendiente Diseño', colorClass: 'bg-rose-600' });
+          actions.push({ label: 'Rechazar (A Arte)', nextStatus: 'Pendiente Arte', colorClass: 'bg-rose-600' });
         }
         break;
       case 'Pendiente OK Cliente':
         if (isDigital) {
           actions.push({ label: 'OK Cliente (Publicar)', nextStatus: 'Aprobado/Publicado', colorClass: 'bg-emerald-600' });
-          actions.push({ label: 'Rechazo Cliente (A Diseño)', nextStatus: 'Pendiente Diseño', colorClass: 'bg-rose-600' });
+          actions.push({ label: 'Rechazo Cliente (A Arte)', nextStatus: 'Pendiente Arte', colorClass: 'bg-rose-600' });
         }
         break;
       case 'Aprobado/Publicado':
@@ -259,16 +261,24 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   return (
     <div className="flex flex-col lg:flex-row gap-8 animate-fadeIn pb-20">
       <div className="flex-1 space-y-6">
-        <header className="flex items-center justify-between">
+        <header className="flex items-center justify-between bg-apc-green p-6 rounded-3xl text-white shadow-xl shadow-apc-green/20 mb-8">
           <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 bg-white border rounded-xl hover:bg-slate-50 transition-all text-slate-500 shadow-sm">
-               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            <button onClick={onBack} className="p-2 bg-white/10 border border-white/20 rounded-xl hover:bg-white/20 transition-all text-white shadow-sm">
+               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             </button>
             <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">{project.id}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-black tracking-tight">{project.id}</h1>
+                {project.fecha_entrega && (
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full ${priority.color} text-white text-[8px] font-black uppercase shadow-sm`}>
+                    <div className={`w-1.5 h-1.5 bg-white ${priority.shape === 'rhombus' ? 'rotate-45' : 'rounded-full'}`}></div>
+                    {priority.text}
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{project.empresa} - {project.producto}</p>
-                <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-black uppercase">
+                <p className="text-xs text-white/70 font-bold uppercase tracking-widest">{project.empresa} - {project.producto}</p>
+                <span className="text-[8px] bg-white/10 text-white/80 px-1.5 py-0.5 rounded font-black uppercase">
                   Owner: {users.find(u => u.id === project.ownerId)?.name || 'Sistema'}
                 </span>
               </div>
@@ -293,13 +303,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         <div className="bg-white p-6 rounded-3xl border shadow-sm">
           <div className="flex justify-between items-center mb-6">
             <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
-              <Icons.Project /> Brief Maestro APC
+              <Icons.Project className="text-apc-green" /> Brief Maestro APC
             </h3>
             {canEditBrief && (
               <button onClick={() => {
                 updateBrief(project.id, briefContent);
                 setDialog({ type: 'alert', message: "Brief Maestro guardado exitosamente." });
-              }} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black rounded-lg hover:bg-slate-800 transition-all uppercase tracking-widest">
+              }} className="px-4 py-2 bg-apc-green text-white text-[10px] font-black rounded-lg hover:bg-apc-green/80 transition-all uppercase tracking-widest">
                 Guardar Cambios
               </button>
             )}
@@ -323,7 +333,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                       <span className="text-[8px] font-bold text-slate-400">{new Date(item.date).toLocaleString()}</span>
                       {idx === 0 && <span className="text-[8px] font-black bg-emerald-600 text-white px-1.5 py-0.5 rounded uppercase tracking-tighter">Última Versión</span>}
                     </div>
-                    <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 font-bold underline truncate block hover:text-blue-800">
+                    <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-xs text-apc-pink font-bold underline truncate block hover:text-apc-pink/80">
                       {item.link}
                     </a>
                     {item.comment && <p className="text-[10px] text-slate-500 italic mt-1 truncate">"{item.comment}"</p>}
@@ -353,7 +363,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               {(canManageMaterials) && project.status !== 'Finalizado' && (
                 <button 
                   onClick={() => setShowNewMaterial(!showNewMaterial)}
-                  className="px-4 py-2 bg-blue-600 text-white text-[10px] font-black rounded-lg hover:bg-blue-700 transition-all uppercase tracking-widest flex items-center gap-2"
+                  className="px-4 py-2 bg-apc-pink text-white text-[10px] font-black rounded-lg hover:bg-apc-pink/80 transition-all uppercase tracking-widest flex items-center gap-2"
                 >
                   <Icons.Plus /> Agregar Material
                 </button>
@@ -364,11 +374,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               <div className="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4 items-end animate-fadeIn">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nombre del Material</label>
-                  <input type="text" value={newMatNombre} onChange={e => setNewMatNombre(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ej: Post 1 - Lunes" />
+                  <input type="text" value={newMatNombre} onChange={e => setNewMatNombre(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-apc-pink" placeholder="Ej: Post 1 - Lunes" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo</label>
-                  <select value={newMatTipo} onChange={e => setNewMatTipo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500">
+                  <select value={newMatTipo} onChange={e => setNewMatTipo(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-apc-pink">
                     <option>Imagen</option>
                     <option>Video</option>
                     <option>Carrusel</option>
@@ -379,7 +389,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Red Social</label>
-                  <select value={newMatRed} onChange={e => setNewMatRed(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500">
+                  <select value={newMatRed} onChange={e => setNewMatRed(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-apc-pink">
                     <option>Facebook</option>
                     <option>Instagram</option>
                     <option>LinkedIn</option>
@@ -388,7 +398,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                     <option>X (Twitter)</option>
                   </select>
                 </div>
-                <button onClick={handleAddMaterial} className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black rounded-lg hover:bg-slate-800 transition-all uppercase tracking-widest h-[38px]">
+                <button onClick={handleAddMaterial} className="px-4 py-2 bg-apc-green text-white text-[10px] font-black rounded-lg hover:bg-apc-green/80 transition-all uppercase tracking-widest h-[38px]">
                   Guardar
                 </button>
               </div>
@@ -406,7 +416,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                         <h4 className="font-black text-slate-800 text-sm">{mat.nombre}</h4>
                         <div className="flex gap-2 mt-1">
                           <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded uppercase">{mat.tipo}</span>
-                          <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded uppercase">{mat.redSocial}</span>
+                          <span className="text-[9px] font-bold bg-apc-pink/10 text-apc-pink px-2 py-0.5 rounded uppercase">{mat.redSocial}</span>
                         </div>
                       </div>
                       
@@ -414,8 +424,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                         <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${
                           mat.estado === 'Aprobado/Publicado' ? 'bg-emerald-100 text-emerald-700' :
                           mat.estado.includes('Corrección') ? 'bg-purple-100 text-purple-700' :
-                          mat.estado.includes('Diseño') ? 'bg-amber-100 text-amber-700' :
-                          'bg-blue-100 text-blue-700'
+                          mat.estado.includes('Arte') ? 'bg-amber-100 text-amber-700' :
+                          'bg-apc-pink/10 text-apc-pink'
                         }`}>
                           {mat.estado}
                         </span>
@@ -460,7 +470,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                     setDeliveryLink(e.target.value);
                     if (e.target.value.trim()) setValidationError(null);
                   }}
-                  className={`w-full bg-white border rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 transition-all font-medium ${validationError ? 'border-rose-300 focus:ring-rose-500' : 'border-slate-200 focus:ring-blue-500'}`}
+                  className={`w-full bg-white border rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 transition-all font-medium ${validationError ? 'border-rose-300 focus:ring-rose-500' : 'border-slate-200 focus:ring-apc-pink'}`}
                 />
               </div>
               <input 
@@ -468,7 +478,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 placeholder="Comentarios adicionales de entrega..."
                 value={deliveryComment}
                 onChange={e => setDeliveryComment(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-apc-pink font-medium"
               />
             </div>
           </div>
@@ -482,7 +492,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 <input 
                   type="text" 
                   placeholder="Agregar observación..."
-                  className="text-[10px] px-3 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 w-48 font-medium"
+                  className="text-[10px] px-3 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-apc-pink w-48 font-medium"
                   value={traceabilityComment}
                   onChange={(e) => setTraceabilityComment(e.target.value)}
                 />
@@ -493,7 +503,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                     setTraceabilityComment('');
                     setDialog({ type: 'alert', message: 'Observación agregada y notificada.' });
                   }}
-                  className="bg-slate-900 text-white p-1.5 rounded-lg hover:bg-slate-800 transition-all"
+                  className="bg-apc-green text-white p-1.5 rounded-lg hover:bg-apc-green/80 transition-all"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m5 12 5 5L20 7"/></svg>
                 </button>
@@ -542,12 +552,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
             return responsible ? (
               <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black border ${isLeader ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-blue-100 border-blue-200 text-blue-700'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black border ${isLeader ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-apc-pink/10 border-apc-pink/20 text-apc-pink'}`}>
                   {(responsible.name || '??').substring(0,2).toUpperCase()}
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800 uppercase leading-none">{responsible.name}</p>
-                  <p className={`text-[8px] font-black uppercase mt-1 ${isLeader ? 'text-amber-600' : 'text-blue-600'}`}>
+                  <p className={`text-[8px] font-black uppercase mt-1 ${isLeader ? 'text-amber-600' : 'text-apc-pink'}`}>
                     {isLeader ? `Líder de ${targetArea} (Pte. Delegar)` : `Operativo ${targetArea}`}
                   </p>
                 </div>
@@ -559,13 +569,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         </div>
 
         {!isQAStage && !isClosingStage && project.status !== 'Finalizado' && (project.category !== 'PARRILLA RRSS' || isInitialStage) && (
-          <div className="bg-white p-6 rounded-3xl border shadow-xl border-t-8 border-blue-600">
+          <div className="bg-white p-6 rounded-3xl border shadow-xl border-t-8 border-apc-green">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Acción de Etapa Actual</p>
             <button 
               onClick={handleAdvance}
               disabled={!canOperate}
               className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
-                canOperate ? 'bg-blue-600 text-white hover:bg-blue-700 hover:scale-[1.02]' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                canOperate ? 'bg-apc-green text-white hover:bg-apc-green/80 hover:scale-[1.02]' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
               }`}
             >
               {getButtonLabel()}
@@ -579,9 +589,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         )}
 
         {isClosingStage && canOperate && project.status !== 'Finalizado' && (
-          <div className="bg-white p-6 rounded-3xl border shadow-xl border-t-8 border-indigo-600 space-y-6">
-            <h3 className="font-black text-[10px] uppercase tracking-widest text-indigo-600 flex items-center gap-2">
-              <Icons.Check /> Cierre y Calidad de Cuentas
+          <div className="bg-white p-6 rounded-3xl border shadow-xl border-t-8 border-apc-pink space-y-6">
+            <h3 className="font-black text-[10px] uppercase tracking-widest text-apc-pink flex items-center gap-2">
+              <Icons.Check className="w-4 h-4" /> Cierre y Calidad de Cuentas
             </h3>
 
             {/* Step 1: Quality Review */}
@@ -597,7 +607,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => processAccountsReview(project.id, true, accountsFeedback)}
-                    className="py-2 bg-emerald-600 text-white font-black text-[9px] rounded-lg hover:bg-emerald-700 uppercase"
+                    className="py-2 bg-apc-green text-white font-black text-[9px] rounded-lg hover:bg-apc-green/80 uppercase"
                   >
                     CALIDAD OK
                   </button>
@@ -647,7 +657,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                         if (!presentationLink) { alert("Debe subir el material final."); return; }
                         submitForPresentation(project.id, presentationLink, presentationVersion);
                       }}
-                      className="w-full py-3 bg-blue-600 text-white font-black text-[10px] rounded-xl hover:bg-blue-700 uppercase tracking-widest shadow-md"
+                      className="w-full py-3 bg-apc-green text-white font-black text-[10px] rounded-xl hover:bg-apc-green/80 uppercase tracking-widest shadow-md"
                     >
                       PRESENTACIÓN PARA CLIENTE
                     </button>
@@ -659,7 +669,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                     <div className="flex flex-col gap-2">
                       <button 
                         onClick={() => setClientFeedbackResult('approved')}
-                        className={`py-2 px-3 rounded-lg text-[9px] font-black border-2 transition-all ${clientFeedbackResult === 'approved' ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-emerald-100 text-emerald-600'}`}
+                        className={`py-2 px-3 rounded-lg text-[9px] font-black border-2 transition-all ${clientFeedbackResult === 'approved' ? 'bg-apc-green border-apc-green text-white' : 'bg-white border-apc-green/10 text-apc-green'}`}
                       >
                         RECIBE SIN CORRECCIONES
                       </button>
@@ -671,7 +681,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                       </button>
                       <button 
                         onClick={() => setClientFeedbackResult('rejected')}
-                        className={`py-2 px-3 rounded-lg text-[9px] font-black border-2 transition-all ${clientFeedbackResult === 'rejected' ? 'bg-rose-600 border-rose-600 text-white' : 'bg-white border-rose-100 text-rose-600'}`}
+                        className={`py-2 px-3 rounded-lg text-[9px] font-black border-2 transition-all ${clientFeedbackResult === 'rejected' ? 'bg-apc-pink border-apc-pink text-white' : 'bg-white border-apc-pink/10 text-apc-pink'}`}
                       >
                         RECHAZADA POR CLIENTE
                       </button>
@@ -717,9 +727,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         )}
 
         {isQAStage && canOperate && project.status !== 'Finalizado' && project.category !== 'PARRILLA RRSS' && (
-          <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-2xl border-t-4 border-amber-500">
-            <h3 className="font-black text-[10px] uppercase tracking-widest text-amber-500 mb-4 flex items-center gap-2">
-              <Icons.Ai /> QA Correction Gate
+          <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-2xl border-t-4 border-apc-pink">
+            <h3 className="font-black text-[10px] uppercase tracking-widest text-apc-pink mb-4 flex items-center gap-2">
+              <Icons.Ai className="w-4 h-4" /> QA Correction Gate
             </h3>
             {project.last_delivery_link && (
                <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10">
@@ -734,8 +744,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               onChange={(e) => setQaFeedback(e.target.value)}
             />
             <div className="grid grid-cols-1 gap-2">
-              <button onClick={() => handleQAAction(true)} className="py-3 bg-emerald-600 text-white font-black text-[10px] rounded-xl hover:bg-emerald-700 uppercase tracking-widest transition-colors">APROBAR Y CONTINUAR</button>
-              <button onClick={() => handleQAAction(false)} className="py-3 bg-rose-600 text-white font-black text-[10px] rounded-xl hover:bg-rose-700 uppercase tracking-widest transition-colors">RECHAZAR Y DEVOLVER</button>
+              <button onClick={() => handleQAAction(true)} className="py-3 bg-apc-green text-white font-black text-[10px] rounded-xl hover:bg-apc-green/80 uppercase tracking-widest transition-colors">APROBAR Y CONTINUAR</button>
+              <button onClick={() => handleQAAction(false)} className="py-3 bg-apc-pink text-white font-black text-[10px] rounded-xl hover:bg-apc-pink/80 uppercase tracking-widest transition-colors">RECHAZAR Y DEVOLVER</button>
             </div>
           </div>
         )}

@@ -11,6 +11,7 @@ import ClientsView from './ClientsView';
 import UsersView from './UsersView';
 import { db } from './firebase';
 import { ProjectTable } from './ProjectTable';
+import { normalizeString } from './workflowConfig';
 
 import ErrorBoundary from './ErrorBoundary';
 
@@ -21,38 +22,104 @@ const AppContent: React.FC = () => {
 
   if (!db || loading) {
     return (
-      <div className="bg-[#0f172a] h-screen w-screen flex flex-col items-center justify-center gap-6">
-        <div className="w-16 h-16 border-4 border-t-blue-500 border-slate-700 rounded-full animate-spin"></div>
-        <div className="text-center animate-pulse">
-          <h1 className="text-white font-black text-xl tracking-[0.3em] uppercase">Iniciando Servicios APC...</h1>
-          <p className="text-slate-500 text-xs mt-2 font-bold tracking-widest uppercase">Estableciendo conexión con Realtime Database</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-apc-green relative overflow-hidden">
+        {/* Decorative Background */}
+        <div className="absolute top-0 left-0 w-full h-full bg-striped-green opacity-5"></div>
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-apc-pink/10 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-apc-light-teal/10 rounded-full blur-3xl"></div>
+
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="apc-pill w-24 h-24 flex items-center justify-center mb-8 animate-pulse">
+            <div className="apc-pill-inner">,</div>
+          </div>
+          <h1 className="text-white text-4xl font-black tracking-tighter mb-2">
+            APC <span className="text-apc-pink">Control Hub</span>
+          </h1>
+          <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden mt-4">
+            <div className="h-full bg-apc-pink animate-loading-bar"></div>
+          </div>
+          <p className="text-white/60 text-[10px] font-black uppercase tracking-[0.5em] mt-6 animate-pulse">
+            Iniciando sistema...
+          </p>
         </div>
       </div>
     );
   }
 
   const exportMasterCSV = () => {
-    const headers = ["ID ODT", "Cliente", "Marca", "Producto", "Fecha Creación", "Fecha Entrega", "Monto", "Facturado", "Pagado", "Días en Sistema"];
+    const headers = [
+      "ID ODT", "Cliente", "Marca", "Producto", "Categoría", "Subcategoría", 
+      "Fecha Creación", "Fecha Entrega (Prometida)", "Fecha Finalizado (Real)", 
+      "Días en Sistema", "Etapa Actual", "Estatus", "Monto Proyectado", 
+      "Facturado", "Pagado", "Costo Promedio por Día", "Costo por Área (Estimado)",
+      "Correcciones QA (Total)", "Correcciones Cliente (Total)", 
+      "Feedback Cliente Final", "Total Correcciones Post-Presentación",
+      "Aprobadores (QA/Cuentas/Cliente)", "Integrantes por Área", 
+      "Último Comentario", "Autor Último Comentario"
+    ];
+
+    const escapeCSV = (val: any) => {
+      if (val === null || val === undefined) return "";
+      let str = String(val).replace(/"/g, '""');
+      if (str.includes(",") || str.includes("\n") || str.includes('"')) {
+        str = `"${str}"`;
+      }
+      return str;
+    };
+
     const rows = projects.map(p => {
       const created = new Date(p.createdAt);
       const finished = p.fecha_finalizado ? new Date(p.fecha_finalizado) : new Date();
-      const daysInSystem = Math.floor((finished.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+      const daysInSystem = Math.max(1, Math.floor((finished.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
       
+      const avgCostPerDay = (p.monto_proyectado || 0) / daysInSystem;
+      const numAreas = p.areas_seleccionadas?.length || 1;
+      const costPerArea = (p.monto_proyectado || 0) / numAreas;
+
+      const qaRejections = p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0;
+      const clientRejections = p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("RECHAZADO por Cliente")).length || 0;
+      
+      const approvers = p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("APROBADO"))
+        .map(c => `${c.authorName} (${c.text.split(' ')[0]})`)
+        .join(" | ") || "N/A";
+
+      const assignments = p.asignaciones?.map(a => {
+        const u = users.find(user => user.id === a.usuarioId);
+        return `${a.area}: ${u?.name || 'Pte'}`;
+      }).join(" | ") || "N/A";
+
+      const lastComment = p.comentarios?.[0];
+
       return [
         p.id,
         p.empresa,
         p.marca,
         p.producto,
+        p.category || "N/A",
+        p.subCategory || "N/A",
         created.toLocaleDateString(),
-        p.fecha_finalizado ? new Date(p.fecha_finalizado).toLocaleDateString() : "Pte",
-        p.monto_proyectado,
+        p.fecha_entrega ? new Date(p.fecha_entrega).toLocaleDateString() : "N/A",
+        p.fecha_finalizado ? new Date(p.fecha_finalizado).toLocaleDateString() : "En Proceso",
+        daysInSystem,
+        p.etapa_actual,
+        p.status,
+        p.monto_proyectado || 0,
         p.facturado ? "SÍ" : "NO",
         p.pagado ? "SÍ" : "NO",
-        daysInSystem
-      ].join(",");
+        avgCostPerDay.toFixed(2),
+        costPerArea.toFixed(2),
+        qaRejections,
+        clientRejections,
+        p.client_feedback || "Pte",
+        p.correction_count_after_presentation || 0,
+        approvers,
+        assignments,
+        lastComment?.text || "N/A",
+        lastComment?.authorName || "N/A"
+      ].map(escapeCSV).join(",");
     });
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -70,8 +137,20 @@ const AppContent: React.FC = () => {
       const isAreaLead = user?.role === UserRole.Lider_Operativo;
       if (isAreaLead) {
         const stages = getRoadmapStages(p);
-        const currentStage = stages[p.current_stage_index || 0];
-        return currentStage === user?.department || isDirectlyAssigned;
+        const currentStage = stages[p.current_stage_index || 0] || '';
+        
+        // Lógica de pertenencia de etapa a departamento
+        const userDept = normalizeString(user?.department || '');
+        const normalizedCurrentStage = normalizeString(currentStage);
+        
+        let isMyCurrentStage = false;
+        if (userDept === 'qa' || user?.role === UserRole.Correccion) {
+          isMyCurrentStage = normalizedCurrentStage.includes('qa');
+        } else {
+          isMyCurrentStage = normalizedCurrentStage === userDept;
+        }
+        
+        return isMyCurrentStage || isDirectlyAssigned;
       }
       return isDirectlyAssigned;
     }) || [];

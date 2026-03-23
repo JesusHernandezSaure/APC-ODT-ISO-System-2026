@@ -26,7 +26,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     processAccountsReview,
     submitForPresentation,
     processClientFeedback,
-    addTraceabilityComment
+    addTraceabilityComment,
+    updateQAChecklist,
+    delegateProject
   } = useODT();
   const [briefContent, setBriefContent] = useState(project.brief);
   const [traceabilityComment, setTraceabilityComment] = useState('');
@@ -36,7 +38,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [deliveryComment, setDeliveryComment] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
-  const [auditResult, setAuditResult] = useState<any>(null);
+  const [auditResult, setAuditResult] = useState<{ score: number, findings: string[], recommendations: string[], isoClause: string } | null>(null);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [showDelegationModal, setShowDelegationModal] = useState(false);
+  const [selectedDelegateId, setSelectedDelegateId] = useState('');
 
   // New state for Closing Stage
   const [accountsFeedback, setAccountsFeedback] = useState('');
@@ -75,12 +80,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     if (isQAStage) {
       const isQaLider = user.role === UserRole.Correccion;
       const isQaOperaAssigned = user.role === UserRole.QA_Opera && project.asignaciones?.some(a => a.usuarioId === user.id);
-      return isQaLider || isQaOperaAssigned;
+      const isMedicalLider = user.role === UserRole.Medico_Lider;
+      const isMedicalOperaAssigned = user.role === UserRole.Medico_Opera && project.asignaciones?.some(a => a.usuarioId === user.id);
+      return isQaLider || isQaOperaAssigned || isMedicalLider || isMedicalOperaAssigned;
     }
     
     if (isProductionStage) {
       const currentArea = roadmapStages[currentIdx];
-      const isAreaLead = user.role === UserRole.Lider_Operativo && user.department === currentArea;
+      const isAreaLead = (user.role === UserRole.Lider_Operativo || user.role === UserRole.Medico_Lider) && user.department === currentArea;
       const isDirectlyAssigned = project.asignaciones?.some(a => a.usuarioId === user.id);
       return isAreaLead || isDirectlyAssigned;
     }
@@ -130,7 +137,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       setDeliveryLink('');
       setDeliveryComment('');
       setValidationError(null);
-    } catch (e) {
+    } catch {
       setDialog({ type: 'alert', message: "Error al procesar el avance en la base de datos." });
     }
   };
@@ -194,9 +201,33 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
   const handleAudit = async () => {
     setIsAuditing(true);
-    const res = await auditProjectISO(project);
-    setAuditResult(res);
-    setIsAuditing(false);
+    try {
+      const res = await auditProjectISO(project);
+      setAuditResult(res);
+      setShowAuditModal(true);
+    } catch (e) {
+      console.error("Audit failed:", e);
+      setDialog({ type: 'alert', message: "Error al ejecutar la auditoría AI." });
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
+  const handleDelegate = async () => {
+    if (!selectedDelegateId) return;
+    try {
+      const currentStage = (project.etapa_actual || project.etapaActual || '');
+      const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
+      const targetArea = isQA ? 'QA' : currentStage;
+      
+      await delegateProject(project.id, targetArea, selectedDelegateId);
+      setDialog({ type: 'alert', message: `ODT delegada exitosamente a ${users.find(u => u.id === selectedDelegateId)?.name}` });
+      setShowDelegationModal(false);
+      setSelectedDelegateId('');
+    } catch (e) {
+      console.error("Delegation failed:", e);
+      setDialog({ type: 'alert', message: "Error al delegar la ODT." });
+    }
   };
 
   const getButtonLabel = () => {
@@ -218,9 +249,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   };
 
   const canDeleteODT = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
-  const canEditBrief = canOperate || user?.role === UserRole.Admin || user?.department === 'Cuentas';
-  const canManageMaterials = user?.department === 'Digital' || user?.department === 'Cuentas' || user?.role === UserRole.Admin;
-  const canRunAudit = user?.role === UserRole.Admin || user?.role === UserRole.Correccion || user?.department === 'Cuentas';
+  const canEditBrief = canOperate || user?.role === UserRole.Admin || user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
+  const canManageMaterials = user?.department === 'Digital' || user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera || user?.role === UserRole.Admin;
+  const canRunAudit = user?.role === UserRole.Admin || user?.role === UserRole.Correccion || user?.role === UserRole.Medico_Lider || user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
 
   const getMaterialActions = (material: Material) => {
     if (!user) return [];
@@ -228,7 +259,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     
     const isDigital = user.department === 'Digital' || user.role === UserRole.Admin;
     const isDiseno = user.department === 'Arte' || user.role === UserRole.Admin;
-    const isMedico = user.department === 'Médico' || user.role === UserRole.Correccion || user.role === UserRole.Admin;
+    const isMedico = user.department === 'Médico' || user.role === UserRole.Correccion || user.role === UserRole.Admin || user.role === UserRole.Medico_Lider || user.role === UserRole.Medico_Opera;
 
     switch (material.estado) {
       case 'Pendiente Arte':
@@ -299,6 +330,45 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             </span>
           </div>
         </header>
+
+        {/* Alertas de Escalación */}
+        {project.status === 'Correcciones' && user?.id === project.ownerId && (
+          <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-xl mb-6 animate-pulse shadow-sm">
+            <div className="flex items-center gap-3">
+              <Icons.Alert className="text-amber-600" />
+              <p className="text-sm font-bold text-amber-800">
+                Atención: La ODT {project.id} requiere correcciones en {project.etapa_actual}.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {project.contadorCorrecciones && project.contadorCorrecciones >= 2 && (
+          (() => {
+            const currentArea = roadmapStages[currentIdx];
+            const isAreaLeader = user?.role === UserRole.Lider_Operativo && user?.department === currentArea;
+            const isQALeader = (user?.role === UserRole.Correccion || user?.role === UserRole.Medico_Lider) && currentArea.includes('QA');
+            
+            if (isAreaLeader || isQALeader || user?.role === UserRole.Admin) {
+              return (
+                <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-xl mb-6 shadow-lg border border-rose-100">
+                  <div className="flex items-center gap-3">
+                    <Icons.Alert className="text-rose-600 animate-bounce" />
+                    <div>
+                      <p className="text-xs font-black text-rose-800 uppercase tracking-tight">
+                        🚨 ALERTA URGENTE: Múltiples Rechazos
+                      </p>
+                      <p className="text-[10px] text-rose-600 font-bold">
+                        La ODT {project.id} ha sido rechazada {project.contadorCorrecciones} veces en esta etapa.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()
+        )}
 
         <div className="bg-white p-6 rounded-3xl border shadow-sm">
           <div className="flex justify-between items-center mb-6">
@@ -487,7 +557,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         <div className="bg-white p-6 rounded-3xl border shadow-sm">
           <div className="flex justify-between items-center mb-6 border-b pb-2">
             <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest">Logs de Trazabilidad ISO 9001</h3>
-            {user?.department === 'Cuentas' && (
+            {(user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera) && (
               <div className="flex gap-2 items-center">
                 <input 
                   type="text" 
@@ -512,7 +582,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </div>
           <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
             {project.comentarios.map(c => {
-              const isQAFeedback = c.text.includes('RECHAZADO') || c.text.includes('APROBADO');
               const isDelivery = c.text.includes('Entrega Técnica');
               return (
                 <div key={c.id} className={`p-4 rounded-2xl text-xs border-l-4 ${
@@ -533,32 +602,54 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       <div className="w-full lg:w-80 space-y-6">
         {/* Current Responsible Info */}
         <div className="bg-white p-6 rounded-3xl border shadow-sm">
-          <p className="text-[8px] font-black text-slate-400 uppercase mb-3 tracking-widest border-b pb-2">Responsable de la Etapa Actual</p>
+          <div className="flex justify-between items-center mb-3 border-b pb-2">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Responsable de la Etapa Actual</p>
+            {(() => {
+              const currentStage = (project.etapa_actual || project.etapaActual || '');
+              const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
+              const targetArea = isQA ? 'QA' : currentStage;
+              const isLeader = user?.role === UserRole.Lider_Operativo && user?.department === targetArea;
+              const isCorreccion = user?.role === UserRole.Correccion && isQA;
+              const isMedicalLider = user?.role === UserRole.Medico_Lider && (isQA || targetArea === 'Médico');
+              
+              if (isLeader || isCorreccion || isMedicalLider || user?.role === UserRole.Admin) {
+                return (
+                  <button 
+                    onClick={() => setShowDelegationModal(true)}
+                    className="text-[8px] font-black text-apc-pink hover:text-apc-pink/80 uppercase tracking-widest flex items-center gap-1"
+                  >
+                    <Icons.Plus className="w-2 h-2" /> Delegar
+                  </button>
+                );
+              }
+              return null;
+            })()}
+          </div>
           {(() => {
-            const currentStage = (project.etapa_actual || (project as any).etapaActual || '');
+            const currentStage = (project.etapa_actual || project.etapaActual || '');
             const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
             const targetArea = isQA ? 'QA' : currentStage;
             const assignment = project.asignaciones?.find(a => a.area === targetArea);
-            let responsible = users?.find((u: any) => u.id === assignment?.usuarioId);
-            let isLeader = false;
+            let responsible = users?.find(u => u.id === assignment?.usuarioId);
+            let isLeaderDisplay = false;
 
             if (!responsible) {
-              responsible = users?.find((u: any) => 
+              responsible = users?.find(u => 
                 u.department === targetArea && 
-                (u.role === 'Lider_Operativo' || u.role === 'Correccion')
+                (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider)
               );
-              if (responsible) isLeader = true;
+              if (responsible) isLeaderDisplay = true;
             }
 
             return responsible ? (
               <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black border ${isLeader ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-apc-pink/10 border-apc-pink/20 text-apc-pink'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black border ${isLeaderDisplay ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-apc-pink/10 border-apc-pink/20 text-apc-pink'}`}>
                   {(responsible.name || '??').substring(0,2).toUpperCase()}
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800 uppercase leading-none">{responsible.name}</p>
-                  <p className={`text-[8px] font-black uppercase mt-1 ${isLeader ? 'text-amber-600' : 'text-apc-pink'}`}>
-                    {isLeader ? `Líder de ${targetArea} (Pte. Delegar)` : `Operativo ${targetArea}`}
+                  <p className={`text-[8px] font-black uppercase mt-1 ${isLeaderDisplay ? 'text-amber-600' : 'text-apc-pink'}`}>
+                    {isLeaderDisplay ? `Líder de ${targetArea} (Pte. Delegar)` : `Operativo ${targetArea}`}
                   </p>
                 </div>
               </div>
@@ -726,7 +817,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </div>
         )}
 
-        {isQAStage && canOperate && project.status !== 'Finalizado' && project.category !== 'PARRILLA RRSS' && (
+        {isQAStage && (canOperate || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera) && project.status !== 'Finalizado' && project.category !== 'PARRILLA RRSS' && (
           <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-2xl border-t-4 border-apc-pink">
             <h3 className="font-black text-[10px] uppercase tracking-widest text-apc-pink mb-4 flex items-center gap-2">
               <Icons.Ai className="w-4 h-4" /> QA Correction Gate
@@ -742,11 +833,58 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               className={`w-full bg-white/10 border rounded-xl p-4 text-xs outline-none font-medium h-24 mb-4 ${isRejecting ? 'border-rose-500' : 'border-white/20'}`}
               value={qaFeedback}
               onChange={(e) => setQaFeedback(e.target.value)}
+              disabled={!canOperate}
             />
-            <div className="grid grid-cols-1 gap-2">
-              <button onClick={() => handleQAAction(true)} className="py-3 bg-apc-green text-white font-black text-[10px] rounded-xl hover:bg-apc-green/80 uppercase tracking-widest transition-colors">APROBAR Y CONTINUAR</button>
-              <button onClick={() => handleQAAction(false)} className="py-3 bg-apc-pink text-white font-black text-[10px] rounded-xl hover:bg-apc-pink/80 uppercase tracking-widest transition-colors">RECHAZAR Y DEVOLVER</button>
+
+            <div className="mb-6 space-y-3 bg-white/5 p-4 rounded-2xl border border-white/10">
+              <p className="text-[9px] font-black text-apc-pink uppercase tracking-[0.2em] mb-2">Checklist de Calidad Obligatorio</p>
+              
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={project.qaChecklist?.medica || false}
+                  onChange={(e) => updateQAChecklist(project.id, 'medica', e.target.checked)}
+                  disabled={!canOperate}
+                  className="w-4 h-4 rounded border-white/20 bg-white/10 text-apc-pink focus:ring-apc-pink focus:ring-offset-slate-900"
+                />
+                <span className="text-[11px] font-bold text-slate-300 group-hover:text-white transition-colors">Revisión Médica (Precisión científica)</span>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={project.qaChecklist?.estilo || false}
+                  onChange={(e) => updateQAChecklist(project.id, 'estilo', e.target.checked)}
+                  disabled={!canOperate}
+                  className="w-4 h-4 rounded border-white/20 bg-white/10 text-apc-pink focus:ring-apc-pink focus:ring-offset-slate-900"
+                />
+                <span className="text-[11px] font-bold text-slate-300 group-hover:text-white transition-colors">Estilo y Ortografía</span>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={project.qaChecklist?.referencias || false}
+                  onChange={(e) => updateQAChecklist(project.id, 'referencias', e.target.checked)}
+                  disabled={!canOperate}
+                  className="w-4 h-4 rounded border-white/20 bg-white/10 text-apc-pink focus:ring-apc-pink focus:ring-offset-slate-900"
+                />
+                <span className="text-[11px] font-bold text-slate-300 group-hover:text-white transition-colors">Calidad y Referencias</span>
+              </label>
             </div>
+
+            {canOperate && (
+              <div className="grid grid-cols-1 gap-2">
+                <button 
+                  onClick={() => handleQAAction(true)} 
+                  disabled={!(project.qaChecklist?.medica && project.qaChecklist?.estilo && project.qaChecklist?.referencias)}
+                  className="py-3 bg-apc-green text-white font-black text-[10px] rounded-xl hover:bg-apc-green/80 uppercase tracking-widest transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:grayscale"
+                >
+                  APROBAR Y CONTINUAR
+                </button>
+                <button onClick={() => handleQAAction(false)} className="py-3 bg-apc-pink text-white font-black text-[10px] rounded-xl hover:bg-apc-pink/80 uppercase tracking-widest transition-colors">RECHAZAR Y DEVOLVER</button>
+              </div>
+            )}
           </div>
         )}
 
@@ -760,15 +898,20 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               return (
                 <div key={idx} className="flex gap-4 items-start relative z-10">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all shrink-0 ${
-                    isActive ? 'bg-blue-600 border-blue-100 scale-110 shadow-lg' : 
+                    isActive ? 'bg-apc-pink border-apc-pink/20 scale-110 shadow-lg shadow-apc-pink/20' : 
                     isCompleted ? 'bg-emerald-500 border-emerald-50' : 'bg-slate-50 border-white'
                   }`}>
                     {isCompleted && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><path d="M20 6 9 17l-5-5"/></svg>}
                     {isActive && <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
                   </div>
-                  <p className={`text-[10px] font-black uppercase tracking-tighter leading-tight mt-1 ${isActive ? 'text-blue-600' : isCompleted ? 'text-emerald-600' : 'text-slate-300'}`}>
-                    {stage}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[10px] font-black uppercase tracking-tighter leading-tight mt-1 ${isActive ? 'text-apc-pink' : isCompleted ? 'text-emerald-600' : 'text-slate-300'}`}>
+                      {stage}
+                    </p>
+                    {isActive && (
+                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Etapa Actual</p>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -793,6 +936,117 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </div>
         )}
       </div>
+
+      {showAuditModal && auditResult && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight">
+                <Icons.Ai className="text-blue-600" /> Auditoría ISO 9001:2015
+              </h2>
+              <button onClick={() => setShowAuditModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <Icons.Close />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="bg-blue-50 p-6 rounded-2xl text-center border border-blue-100">
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Score de Calidad</p>
+                <p className="text-4xl font-black text-blue-700">{auditResult.score}%</p>
+              </div>
+              <div className="md:col-span-2 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Cláusula ISO Relevante</p>
+                <p className="text-sm font-bold text-slate-700">{auditResult.isoClause}</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-rose-600 rounded-full"></div> Hallazgos Críticos
+                </h4>
+                <div className="space-y-2">
+                  {auditResult.findings.map((f, i) => (
+                    <div key={i} className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs font-medium text-rose-700">
+                      {f}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full"></div> Recomendaciones de Mejora
+                </h4>
+                <div className="space-y-2">
+                  {auditResult.recommendations.map((r, i) => (
+                    <div key={i} className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-xs font-medium text-emerald-700">
+                      {r}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setShowAuditModal(false)}
+              className="w-full mt-8 py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-slate-800 transition-all"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDelegationModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Delegar ODT</h2>
+              <button onClick={() => setShowDelegationModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <Icons.Close />
+              </button>
+            </div>
+            
+            <p className="text-xs text-slate-500 font-medium mb-6">
+              Seleccione al responsable para la etapa actual: <span className="font-black text-slate-800">{(project.etapa_actual || project.etapaActual)}</span>
+            </p>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaborador</label>
+                <select 
+                  value={selectedDelegateId}
+                  onChange={(e) => setSelectedDelegateId(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-apc-pink"
+                >
+                  <option value="">Seleccionar...</option>
+                  {users
+                    .filter(u => {
+                      const currentStage = (project.etapa_actual || project.etapaActual || '').toUpperCase();
+                      const isQA = currentStage.includes('QA') || project.status === 'QA';
+                      if (isQA) return u.department === 'QA' || u.role === UserRole.Correccion || u.role === UserRole.QA_Opera || u.role === UserRole.Medico_Lider || u.role === UserRole.Medico_Opera;
+                      return u.department === (project.etapa_actual || project.etapaActual);
+                    })
+                    .map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                    ))
+                  }
+                </select>
+              </div>
+
+              <button 
+                onClick={handleDelegate}
+                disabled={!selectedDelegateId}
+                className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
+                  selectedDelegateId ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                }`}
+              >
+                Confirmar Delegación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {dialog && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">

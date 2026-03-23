@@ -12,7 +12,7 @@ const ALL_DEPARTMENTS = [
 ];
 
 const UsersView: React.FC = () => {
-  const { users, manageUser, toggleUserStatus } = useODT();
+  const { users, manageUser, toggleUserStatus, removeUser } = useODT();
   const [isEditing, setIsEditing] = useState<Partial<User> | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
 
@@ -46,7 +46,8 @@ const UsersView: React.FC = () => {
           { name: 'Ejecutivo Cuentas 1', username: 'cuentas.opera1', password: '123', role: UserRole.Cuentas_Opera, department: 'Cuentas' },
           { name: 'Líder Creativo', username: 'creativo.lider', password: '123', role: UserRole.Lider_Operativo, department: 'Creativo' },
           { name: 'Diseñador Senior', username: 'diseno.opera', password: '123', role: UserRole.Operativo, department: 'Arte' },
-          { name: 'Director Médico', username: 'medical.lider', password: '123', role: UserRole.Lider_Operativo, department: 'Médico' },
+          { name: 'Director Médico', username: 'medical.lider', password: '123', role: UserRole.Medico_Lider, department: 'Médico' },
+          { name: 'Médico Operativo', username: 'medical.opera', password: '123', role: UserRole.Medico_Opera, department: 'Médico' },
           { name: 'Editor Audiovisual', username: 'video.opera', password: '123', role: UserRole.Operativo, department: 'Audio y Video' },
           { name: 'Desarrollador Digital', username: 'digital.opera', password: '123', role: UserRole.Operativo, department: 'Digital' },
           { name: 'QA Lider (Master)', username: 'qa.lider', password: '123', role: UserRole.Correccion, department: 'QA' },
@@ -58,7 +59,7 @@ const UsersView: React.FC = () => {
             await manageUser({ ...u, active: true });
           }
           setDialog({ type: 'alert', message: "¡Estructura de usuarios de prueba creada exitosamente!" });
-        } catch (err) {
+        } catch {
           setDialog({ type: 'alert', message: "Error en el proceso de semillado." });
         } finally {
           setIsSeeding(false);
@@ -74,7 +75,9 @@ const UsersView: React.FC = () => {
     [UserRole.Lider_Operativo]: 'Líder Operativo',
     [UserRole.Operativo]: 'Operativo',
     [UserRole.Correccion]: 'Líder de QA',
-    [UserRole.QA_Opera]: 'QA Operativo'
+    [UserRole.QA_Opera]: 'QA Operativo',
+    [UserRole.Medico_Lider]: 'Médico Líder',
+    [UserRole.Medico_Opera]: 'Médico Operativo'
   };
 
   if (!users) {
@@ -137,12 +140,22 @@ const UsersView: React.FC = () => {
                     {u.active ? 'ACTIVO' : 'INACTIVO'}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-right space-x-2">
+                 <td className="px-6 py-4 text-right space-x-2">
                    <button onClick={() => setIsEditing(u)} className="p-2 hover:bg-apc-green/10 rounded-lg text-slate-400 hover:text-apc-green transition-all">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                    </button>
                    <button onClick={() => toggleUserStatus(u.id, !u.active)} className={`p-2 rounded-lg transition-all ${u.active ? 'hover:bg-rose-50 text-slate-300 hover:text-rose-500' : 'hover:bg-apc-green/10 text-slate-300 hover:text-apc-green'}`}>
                       {u.active ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2v20"/><path d="m5 15 7 7 7-7"/></svg>}
+                   </button>
+                   <button 
+                     onClick={() => setDialog({
+                       type: 'confirm',
+                       message: `¿Estás seguro de eliminar permanentemente al usuario ${u.name}? Esta acción no se puede deshacer.`,
+                       onConfirm: () => removeUser(u.id)
+                     })} 
+                     className="p-2 hover:bg-rose-50 rounded-lg text-slate-300 hover:text-rose-500 transition-all"
+                   >
+                      <Icons.Trash className="w-4 h-4" />
                    </button>
                 </td>
               </tr>
@@ -184,6 +197,8 @@ const UsersView: React.FC = () => {
                     <option value={UserRole.Operativo}>Operativo</option>
                     <option value={UserRole.Correccion}>Líder de QA</option>
                     <option value={UserRole.QA_Opera}>QA Operativo</option>
+                    <option value={UserRole.Medico_Lider}>Médico Líder</option>
+                    <option value={UserRole.Medico_Opera}>Médico Operativo</option>
                   </select>
                </div>
 

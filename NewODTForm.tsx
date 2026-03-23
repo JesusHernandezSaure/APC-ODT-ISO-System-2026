@@ -31,17 +31,17 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   const [brief, setBrief] = useState('');
   const [links, setLinks] = useState<string[]>(['']);
 
-  const generateODTId = () => {
+  const generateODTId = React.useCallback(() => {
     const year = new Date().getFullYear();
     const count = projects.filter(p => p.id.startsWith(`APC-${year}`)).length + 1;
     return `APC-${year}-${count.toString().padStart(3, '0')}`;
-  };
+  }, [projects]);
 
   React.useEffect(() => {
     if (!odtId) {
       setOdtId(generateODTId());
     }
-  }, []);
+  }, [odtId, generateODTId]);
 
   const handleAddLink = () => setLinks([...links, '']);
   const handleLinkChange = (idx: number, val: string) => {
@@ -84,7 +84,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
       await addProject(newProject);
       alert(`ODT ${newProject.id} creada exitosamente.`);
       onClose();
-    } catch (err) {
+    } catch {
       alert("Error al crear la ODT.");
     } finally {
       setLoading(false);

@@ -6,7 +6,9 @@ export enum UserRole {
   Lider_Operativo = 'Lider_Operativo',
   Operativo = 'Operativo',
   Correccion = 'Correccion',
-  QA_Opera = 'QA_Opera'
+  QA_Opera = 'QA_Opera',
+  Medico_Lider = 'Medico_Lider',
+  Medico_Opera = 'Medico_Opera'
 }
 
 export interface User {
@@ -59,7 +61,7 @@ export interface Project {
   correccion_ok: boolean;
   areas_seleccionadas: string[];
   asignaciones: ProjectAssignment[];
-  tracking: any[];
+  tracking: unknown[];
   comentarios: ProjectComment[];
   materiales?: Material[];
   monto_proyectado: number;
@@ -85,6 +87,13 @@ export interface Project {
   correction_count_after_presentation?: number;
   client_rejection_count?: number;
   is_alarm_active?: boolean;
+  internal_qa_rejection_count?: number;
+  contadorCorrecciones?: number;
+  qaChecklist?: {
+    medica: boolean;
+    estilo: boolean;
+    referencias: boolean;
+  };
 }
 
 export interface Client {
@@ -98,13 +107,14 @@ export interface Client {
 export type ViewState = 
   | 'login' 
   | 'dashboard' 
-  | 'leader-dashboard'
+  | 'leader-dashboard' 
   | 'my-projects' 
   | 'clients' 
   | 'users' 
   | 'qa-box' 
   | 'finances' 
-  | 'project-detail';
+  | 'project-detail'
+  | 'calendar';
 
 export interface LoginResult {
   success: boolean;
@@ -147,9 +157,11 @@ export interface ODTContextType {
   removeClient: (clientId: string) => Promise<void>;
   addProject: (project: Partial<Project>) => Promise<void>;
   addTraceabilityComment: (projectId: string, text: string) => Promise<void>;
+  updateQAChecklist: (projectId: string, item: 'medica' | 'estilo' | 'referencias', value: boolean) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
   manageUser: (userData: Partial<User>) => Promise<void>;
   toggleUserStatus: (userId: string, active: boolean) => Promise<void>;
+  removeUser: (userId: string) => Promise<void>;
   advanceProjectStage: (projectId: string, comment: string) => Promise<void>;
   getRoadmapStages: (project: Project) => string[];
   addMaterial: (projectId: string, material: Omit<Material, 'id' | 'creadoPor' | 'fechaCreacion'>) => Promise<void>;

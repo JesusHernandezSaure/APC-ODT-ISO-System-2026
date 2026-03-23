@@ -7,31 +7,29 @@ import { GLOBAL_STAGES, calculateRoadmap, getPriorityInfo, normalizeString } fro
 
 const ODTContext = createContext<ODTContextType | undefined>(undefined);
 
-const escapeFirebaseKey = (key: string) => key.toLowerCase().trim().replace(/[\.\#\$\/\[\]]/g, '_');
+const escapeFirebaseKey = (key: string) => key.toLowerCase().trim().replace(/[.#$/[\]]/g, '_');
 
 export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const savedSession = localStorage.getItem('apc_session');
+    if (savedSession) {
+      try {
+        return JSON.parse(savedSession);
+      } catch (e) {
+        console.error("Error al recuperar sesión", e);
+        return null;
+      }
+    }
+    return null;
+  });
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const savedSession = localStorage.getItem('apc_session');
-    if (savedSession) {
-      try {
-        const parsedUser = JSON.parse(savedSession);
-        setUser(parsedUser);
-      } catch (e) {
-        console.error("Error al recuperar sesión", e);
-      }
-    }
-  }, []);
+  const [loading, setLoading] = useState(!!db);
 
   useEffect(() => {
     if (!db) {
-      setLoading(false);
       return;
     }
     const projectsRef = ref(db, 'projects');
@@ -90,7 +88,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setUser(authUser);
       localStorage.setItem('apc_session', JSON.stringify(authUser));
       return { success: true };
-    } catch (error: any) {
+    } catch {
       return { success: false, error: 'Error de conexión.' };
     }
   };
@@ -117,7 +115,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearNotifications = async () => {
     if (!db || !user) return;
     const userNotifs = notifications.filter(n => n.userId === user.id);
-    const updates: any = {};
+    const updates: Record<string, unknown> = {};
     userNotifs.forEach(n => {
       updates[`notifications/${n.id}`] = null;
     });
@@ -155,7 +153,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
-          const areaLeader = users.find(u => u.department === currentArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+          const areaLeader = users.find(u => u.department === currentArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
           if (areaLeader) {
             const alreadyNotified = notifications.some(n => n.userId === areaLeader.id && n.projectId === p.id && n.type === 'sla_alert' && n.title.includes('RETRASO EN ÁREA'));
             if (!alreadyNotified) {
@@ -269,7 +267,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (newIndex >= stages.length - 1) newStatus = 'Finalizado';
     else if (proximaArea.toUpperCase().includes('REVISIÓN QA')) newStatus = 'QA';
 
-    const updates: any = {
+    const updates: Record<string, unknown> = {
       current_stage_index: newIndex,
       etapa_actual: proximaArea,
       etapaActual: proximaArea, // Sync for visibility
@@ -304,12 +302,12 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const normalizedNextArea = normalizeString(nextArea);
       
       if (normalizedNextArea.includes('qa')) {
-        return userDept === 'qa' || u.role === UserRole.Correccion;
+        return userDept === 'qa' || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider;
       }
       if (normalizedNextArea.includes('cuentas')) {
         return userDept === 'cuentas';
       }
-      return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion);
+      return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider);
     });
 
     if (nextLeader) {
@@ -339,12 +337,13 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (newIndex >= stages.length - 1) newStatus = 'Finalizado';
       else if (proximaAreaCalculada.toUpperCase().includes('REVISIÓN QA')) newStatus = 'QA';
 
-      const updates: any = {
+      const updates: Record<string, unknown> = {
         current_stage_index: newIndex,
         etapa_actual: proximaAreaCalculada,
         etapaActual: proximaAreaCalculada,
         status: newStatus,
         correccion_ok: true,
+        contadorCorrecciones: 0, // Reset counter when approved and moving to new area
         ultimoComentarioQA: 'Aprobado por ' + user.name + (feedback ? ': ' + feedback : ''),
         fechaAprobacionQA: new Date().toISOString(),
         delivery_history: project.last_delivery_link ? [
@@ -359,6 +358,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...(project.delivery_history || [])
         ] : (project.delivery_history || []),
         updatedAt: new Date().toISOString(),
+        qaChecklist: { medica: false, estilo: false, referencias: false }, // Reset checklist on approval
         comentarios: [{ 
           id: `qa-${Date.now()}`, 
           authorId: user.id, 
@@ -385,12 +385,12 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const normalizedNextArea = normalizeString(proximaAreaCalculada);
         
         if (normalizedNextArea.includes('qa')) {
-          return userDept === 'qa' || u.role === UserRole.Correccion;
+          return userDept === 'qa' || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider;
         }
         if (normalizedNextArea.includes('cuentas')) {
           return userDept === 'cuentas';
         }
-        return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion);
+        return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider);
       });
 
       if (nextLeader) {
@@ -407,28 +407,43 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       const newIndex = project.current_stage_index - 1;
       const areaAnterior = stages[newIndex];
-      const updates: any = {
+      const newRejectionCount = (project.contadorCorrecciones || 0) + 1;
+      
+      const updates: Record<string, unknown> = {
         current_stage_index: newIndex,
         etapa_actual: areaAnterior,
         etapaActual: areaAnterior,
         correccion_ok: false,
         status: 'Correcciones',
+        contadorCorrecciones: newRejectionCount,
         ultimoComentarioQA: 'Rechazado por ' + user.name + ': ' + feedback,
         updatedAt: new Date().toISOString(),
+        qaChecklist: { medica: false, estilo: false, referencias: false }, // Reset checklist on rejection
         comentarios: [{ 
           id: `qa-${Date.now()}`, 
           authorId: user.id, 
           authorName: user.name, 
-          text: `RECHAZADO en [${qaStageName}]. Feedback: ${feedback}. Regresando a [${areaAnterior}].`, 
+          text: `RECHAZADO en [${qaStageName}]. Feedback: ${feedback}. Regresando a [${areaAnterior}]. (Rechazo #${newRejectionCount})`, 
           createdAt: new Date().toISOString(), 
           isSystemEvent: true 
         }, ...(project.comentarios || [])]
       };
       await update(ref(db, `projects/${projectId}`), updates);
 
+      // Notificación al Creador/Ejecutivo (Owner)
+      if (project.ownerId) {
+        await createNotification({
+          userId: project.ownerId,
+          title: '⚠️ CORRECCIONES REQUERIDAS',
+          message: `La ODT ${projectId} requiere correcciones en ${areaAnterior}.`,
+          type: 'sla_alert',
+          projectId: projectId
+        });
+      }
+
       // Notificación para el responsable de la etapa anterior (quien debe corregir)
-      const previousAssignment = project.asignaciones?.find(a => a.area === areaAnterior);
-      if (previousAssignment) {
+      const previousAssignment = project.asignaciones?.find(a => normalizeString(a.area) === normalizeString(areaAnterior));
+      if (previousAssignment && previousAssignment.usuarioId !== project.ownerId) {
         await createNotification({
           userId: previousAssignment.usuarioId,
           title: '❌ ODT RECHAZADA POR QA',
@@ -436,6 +451,23 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           type: 'sla_alert',
           projectId: projectId
         });
+      }
+
+      // Notificación al Líder del Área si contadorCorrecciones >= 2
+      if (newRejectionCount >= 2) {
+        const areaLeader = users.find(u => 
+          normalizeString(u.department) === normalizeString(areaAnterior) && 
+          (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider)
+        );
+        if (areaLeader) {
+          await createNotification({
+            userId: areaLeader.id,
+            title: '🚨 ALERTA URGENTE: MÚLTIPLES RECHAZOS',
+            message: `Atención: La ODT ${projectId} ha sido rechazada múltiples veces en el área de ${areaAnterior}.`,
+            type: 'sla_alert',
+            projectId: projectId
+          });
+        }
       }
 
       return areaAnterior;
@@ -450,7 +482,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const stages = getRoadmapStages(project);
 
     if (approved) {
-      const updates: any = {
+      const updates: Record<string, unknown> = {
         accounts_approval_ok: true,
         updatedAt: new Date().toISOString(),
         comentarios: [{
@@ -467,7 +499,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const targetArea = returnToArea || stages[project.current_stage_index - 1];
       const targetIndex = stages.indexOf(targetArea);
       
-      const updates: any = {
+      const updates: Record<string, unknown> = {
         current_stage_index: targetIndex,
         etapa_actual: targetArea,
         etapaActual: targetArea,
@@ -485,7 +517,18 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       await update(ref(db, `projects/${projectId}`), updates);
 
-      const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+      // Notificación al Creador/Ejecutivo (Owner)
+      if (project.ownerId) {
+        await createNotification({
+          userId: project.ownerId,
+          title: '⚠️ CORRECCIONES REQUERIDAS (CUENTAS)',
+          message: `La ODT ${projectId} requiere correcciones en ${targetArea} según revisión de Cuentas.`,
+          type: 'sla_alert',
+          projectId: projectId
+        });
+      }
+
+      const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
       if (targetLeader) {
         await createNotification({
           userId: targetLeader.id,
@@ -514,7 +557,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
-    const updates: any = {
+    const updates: Record<string, unknown> = {
       presentation_link: link,
       presentation_version: version,
       presentation_date: new Date().toISOString(),
@@ -537,7 +580,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!project) return;
 
     const stages = getRoadmapStages(project);
-    let updates: any = {
+    let updates: Record<string, unknown> = {
       client_feedback: result,
       updatedAt: new Date().toISOString(),
     };
@@ -595,7 +638,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }, ...(project.comentarios || [])]
       };
 
-      const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion));
+      const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
       if (targetLeader) {
         await createNotification({
           userId: targetLeader.id,
@@ -624,6 +667,18 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     await update(ref(db, `projects/${projectId}`), updates);
+
+    // Notificación al Creador/Ejecutivo (Owner) si entra en correcciones
+    if (updates.status === 'Correcciones' && project.ownerId) {
+      const targetArea = (updates.etapa_actual || updates.etapaActual) as string;
+      await createNotification({
+        userId: project.ownerId,
+        title: '⚠️ CORRECCIONES REQUERIDAS (CLIENTE)',
+        message: `La ODT ${projectId} requiere correcciones en ${targetArea} tras feedback del cliente.`,
+        type: 'sla_alert',
+        projectId: projectId
+      });
+    }
   };
 
   const manageUser = async (userData: Partial<User>) => {
@@ -635,6 +690,11 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const toggleUserStatus = async (userId: string, active: boolean) => {
     if (!db) return;
     await update(ref(db, `users/${userId}`), { active });
+  };
+
+  const removeUser = async (userId: string) => {
+    if (!db || !user || user.role !== UserRole.Admin) return;
+    await set(ref(db, `users/${userId}`), null);
   };
 
   const addTraceabilityComment = async (projectId: string, text: string) => {
@@ -651,7 +711,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSystemEvent: false
     };
 
-    const updates: any = {
+    const updates: Record<string, unknown> = {
       comentarios: [newComment, ...(project.comentarios || [])],
       updatedAt: new Date().toISOString()
     };
@@ -669,6 +729,38 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         projectId: projectId
       });
     }
+  };
+
+  const updateQAChecklist = async (projectId: string, item: 'medica' | 'estilo' | 'referencias', value: boolean) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const currentChecklist = project.qaChecklist || { medica: false, estilo: false, referencias: false };
+    const newChecklist = { ...currentChecklist, [item]: value };
+
+    const labels: Record<string, string> = {
+      medica: 'Revisión Médica (Precisión científica)',
+      estilo: 'Estilo y Ortografía',
+      referencias: 'Calidad y Referencias'
+    };
+
+    const newComment: ProjectComment = {
+      id: `qa-check-${Date.now()}`,
+      authorId: user.id,
+      authorName: user.name,
+      text: `${user.name} ha validado: ${labels[item]}`,
+      createdAt: new Date().toISOString(),
+      isSystemEvent: false
+    };
+
+    const updates: Record<string, unknown> = {
+      qaChecklist: newChecklist,
+      comentarios: [newComment, ...(project.comentarios || [])],
+      updatedAt: new Date().toISOString()
+    };
+
+    await update(ref(db, `projects/${projectId}`), updates);
   };
 
   const updateBilling = async (projectId: string, facturado: boolean, justification?: string) => {
@@ -733,10 +825,12 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reassignProjectAndFolder = async (projectId: string, clientId: string, newOwnerId: string, portfolio: boolean = false) => {
     if (!db || !user) return;
-    const updates: any = {};
+    const updates: Record<string, unknown> = {};
     if (portfolio) {
       updates[`clients/${clientId}/ownerId`] = newOwnerId;
-      projects.filter(p => p.clientId === clientId).forEach(p => updates[`projects/${p.id}/ownerId`] = newOwnerId);
+      projects.filter(p => p.clientId === clientId).forEach(p => {
+        updates[`projects/${p.id}/ownerId`] = newOwnerId;
+      });
     } else {
       updates[`projects/${projectId}/ownerId`] = newOwnerId;
     }
@@ -773,7 +867,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const allApproved = updatedMateriales.every(m => m.estado === 'Aprobado/Publicado');
     
-    const updates: any = {
+    const updates: Record<string, unknown> = {
       materiales: updatedMateriales,
       updatedAt: new Date().toISOString()
     };
@@ -831,7 +925,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       addProject, 
       addTraceabilityComment,
-      removeProject, manageUser, toggleUserStatus, advanceProjectStage, getRoadmapStages,
+      removeProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, getRoadmapStages,
+      updateQAChecklist,
       addMaterial, updateMaterialStatus, markNotificationAsRead, clearNotifications
     }}>
       {children}
@@ -839,6 +934,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useODT = () => {
   const context = useContext(ODTContext);
   if (!context) throw new Error('useODT error');

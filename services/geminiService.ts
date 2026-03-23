@@ -1,11 +1,13 @@
 
 import {GoogleGenAI, Type} from "@google/genai";
 
+import { Project } from '../types';
+
 /**
  * Audits a project's ODT data against ISO 9001:2015 standards using AI.
  * Uses gemini-3-pro-preview as this is a complex reasoning task.
  */
-export async function auditProjectISO(projectData: any) {
+export async function auditProjectISO(projectData: Partial<Project>) {
   // Always create a new instance right before use to ensure the latest API key is used
   const ai = new GoogleGenAI({apiKey: process.env.GEMINI_API_KEY});
   

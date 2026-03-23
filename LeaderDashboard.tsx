@@ -4,38 +4,53 @@ import { useODT } from './ODTContext';
 import { UserRole, Project } from './types';
 import { normalizeString } from './workflowConfig';
 
-const LeaderDashboard: React.FC = () => {
-  const { user, projects, users, checkSLA, delegateProject } = useODT();
+interface LeaderDashboardProps {
+  onViewProject: (id: string) => void;
+}
+
+const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
+  const { user, projects, users, delegateProject } = useODT();
   const [memberFilter, setMemberFilter] = useState('all');
 
-  const leaderArea = useMemo(() => {
-    if (user?.department === 'QA' || user?.role === UserRole.Correccion) return 'QA';
-    if (user?.department === 'Creativo') return 'Creativo';
-    if (user?.department === 'Arte') return 'Arte';
-    if (user?.department === 'Digital') return 'Digital';
-    return user?.department || '';
+  const availableAreas = useMemo(() => {
+    if (!user) return [];
+    if (user.role === UserRole.Medico_Lider) return ['Médico', 'QA'];
+    if (user.department === 'QA' || user.role === UserRole.Correccion) return ['QA'];
+    return [user.department];
   }, [user]);
+
+  const [activeArea, setActiveArea] = useState(availableAreas[0] || '');
 
   const teamMembers = useMemo(() => {
     if (!user || !users) return [];
-    return users.filter(u => normalizeString(u.department) === normalizeString(user.department));
-  }, [user, users]);
+    
+    return users.filter(u => {
+      const memberDept = normalizeString(u.department);
+      const activeAreaNorm = normalizeString(activeArea);
+      
+      if (user.role === UserRole.Medico_Lider) {
+        // El Medico Lider ve a ambos equipos si está en modo dual, 
+        // pero filtramos por el área activa para mayor claridad en la delegación
+        return memberDept === activeAreaNorm;
+      }
+      
+      return memberDept === normalizeString(user.department);
+    });
+  }, [user, users, activeArea]);
 
   const areaProjects = useMemo(() => {
-    if (!leaderArea || !projects) return [];
+    if (!activeArea || !projects) return [];
     
     let filtered: Project[] = [];
     
-    // Filtro unificado para Líder de Calidad / Corrección
-    if (leaderArea === 'QA' || user?.role === UserRole.Correccion) {
+    if (activeArea === 'QA') {
       filtered = projects.filter(p => {
-        const stageStr = (p.etapa_actual || (p as any).etapaActual || '').toUpperCase();
+        const stageStr = (p.etapa_actual || p.etapaActual || '').toUpperCase();
         return stageStr.includes('REVISIÓN QA') || p.status === 'QA';
       });
     } else {
-      // Otros líderes operativos ven ODTs activas de su área ISO
       filtered = projects.filter(p => 
-        p.areas_seleccionadas?.some(area => normalizeString(area) === normalizeString(leaderArea))
+        p.areas_seleccionadas?.some(area => normalizeString(area) === normalizeString(activeArea))
       );
     }
 
@@ -44,7 +59,7 @@ const LeaderDashboard: React.FC = () => {
     }
     
     return filtered;
-  }, [projects, leaderArea, memberFilter, user]);
+  }, [projects, activeArea, memberFilter]);
 
   if (!user || !projects || !users) {
     return (
@@ -57,9 +72,32 @@ const LeaderDashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-fadeIn">
       <header className="flex justify-between items-center border-b pb-6">
-        <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight">Control de Área: {user?.department || 'CALIDAD'}</h1>
-          <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mt-1">Supervisión Técnica Operativa (ISO 9001)</p>
+        <div className="flex flex-col gap-4">
+          <div>
+            <h1 className="text-2xl font-black uppercase tracking-tight">Control de Área: {activeArea}</h1>
+            <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mt-1">Supervisión Técnica Operativa (ISO 9001)</p>
+          </div>
+          
+          {availableAreas.length > 1 && (
+            <div className="flex gap-2">
+              {availableAreas.map(area => (
+                <button
+                  key={area}
+                  onClick={() => {
+                    setActiveArea(area);
+                    setMemberFilter('all');
+                  }}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    activeArea === area 
+                      ? 'bg-apc-pink text-white shadow-lg shadow-apc-pink/20' 
+                      : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                  }`}
+                >
+                  GESTIONAR {area}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end">
           <label className="text-[9px] font-black text-slate-400 uppercase mb-1 mr-1">Filtrar por Colaborador</label>
@@ -119,7 +157,7 @@ const LeaderDashboard: React.FC = () => {
               </tr>
             ) : (
               areaProjects.map(p => {
-                const currentAssignmentArea = (user?.role === UserRole.Correccion || user?.department === 'QA') ? 'QA' : leaderArea;
+                const currentAssignmentArea = activeArea;
                 const currentAssignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(currentAssignmentArea));
                 const isAssignedToMe = currentAssignment?.usuarioId === user?.id;
 
@@ -141,14 +179,21 @@ const LeaderDashboard: React.FC = () => {
                       <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${p.status === 'QA' ? 'bg-apc-pink/10 text-apc-pink shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
                         {p.status}
                       </span>
-                      <div className="text-[7px] font-black text-slate-400 mt-0.5 uppercase">{(p.etapa_actual || (p as any).etapaActual)}</div>
+                      <div className="text-[7px] font-black text-slate-400 mt-0.5 uppercase">{p.etapa_actual}</div>
                       {p.category === 'PARRILLA RRSS' && p.materiales && p.materiales.length > 0 && (
                         <div className="text-[8px] font-bold text-apc-pink mt-1 uppercase tracking-widest">
                           {p.materiales.filter(m => m.estado === 'Aprobado/Publicado').length}/{p.materiales.length} Mats
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                       <button 
+                         onClick={() => onViewProject(p.id)}
+                         className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-all flex items-center gap-1 text-[9px] font-black uppercase"
+                       >
+                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                         DETALLE
+                       </button>
                        <select 
                          className={`border-none rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all outline-none ${
                            currentAssignment ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-apc-green text-white hover:bg-apc-green/80 animate-bounce'

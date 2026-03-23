@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => {
       css: {
         devSourcemap: false,
       },
+      build: {
+        sourcemap: false,
+      },
       plugins: [
         react(),
         tailwindcss(),

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useODT } from './ODTContext';
 import { UserRole, ViewState } from './types';
-import { Icons } from './constants';
+import * as Constants from './constants';
 import { ref, set } from "firebase/database";
 import { db } from './firebase';
 import NotificationCenter from './NotificationCenter';
@@ -88,29 +88,37 @@ const Login: React.FC = () => {
 };
 
 export const AppRouter: React.FC<{ renderView: (view: ViewState) => React.ReactNode }> = ({ renderView }) => {
+  const { Icons } = Constants;
   const { user, logout } = useODT();
   const [view, setView] = useState<ViewState | null>(null);
 
   useEffect(() => {
     if (!user) {
-      setView('login');
+      if (view !== 'login') {
+        setTimeout(() => setView('login'), 0);
+      }
       return;
     }
     // Solo establecer la vista inicial si estamos en login o no hay vista definida
     if (view === 'login' || !view) {
-      if (user.role === UserRole.Correccion) setView('leader-dashboard');
-      else if (user.role === UserRole.QA_Opera) setView('qa-box');
-      else if (user.department === 'Finanzas') setView('finances');
-      else if (user.role === UserRole.Lider_Operativo) setView('leader-dashboard');
-      else if (user.role === UserRole.Operativo) setView('my-projects');
-      else if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Cuentas_Lider) setView('clients');
-      else setView('dashboard');
+      let nextView: ViewState = 'dashboard';
+      if (user.role === UserRole.Correccion || user.role === UserRole.Medico_Lider) nextView = 'leader-dashboard';
+      else if (user.role === UserRole.QA_Opera) nextView = 'qa-box';
+      else if (user.department === 'Finanzas') nextView = 'finances';
+      else if (user.role === UserRole.Lider_Operativo) nextView = 'leader-dashboard';
+      else if (user.role === UserRole.Operativo) nextView = 'my-projects';
+      else if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Cuentas_Lider) nextView = 'clients';
+      
+      if (view !== nextView) {
+        setTimeout(() => setView(nextView), 0);
+      }
     }
   }, [user, view]);
 
   if (!user || !view || view === 'login') return <Login />;
 
   const canSee = (roles: UserRole[]) => roles.includes(user.role) || user.role === UserRole.Admin;
+  const canSeeQA = canSee([UserRole.Correccion, UserRole.Admin, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]);
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -128,10 +136,11 @@ export const AppRouter: React.FC<{ renderView: (view: ViewState) => React.ReactN
         </div>
         <nav className="flex flex-col gap-1 flex-1 relative z-10">
           {canSee([UserRole.Admin, UserRole.Cuentas_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={view === 'dashboard'} onClick={() => setView('dashboard')} />}
-          {canSee([UserRole.Lider_Operativo, UserRole.Correccion]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={view === 'leader-dashboard'} onClick={() => setView('leader-dashboard')} />}
+          {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={view === 'leader-dashboard'} onClick={() => setView('leader-dashboard')} />}
           {canSee([UserRole.Cuentas_Opera, UserRole.Cuentas_Lider, UserRole.Admin]) && <SidebarItem icon={<Icons.Clients />} label="Clientes / Archivo" active={view === 'clients'} onClick={() => setView('clients')} />}
-          {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Admin, UserRole.QA_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={view === 'my-projects'} onClick={() => setView('my-projects')} />}
-          {canSee([UserRole.Correccion, UserRole.Admin, UserRole.Cuentas_Lider, UserRole.QA_Opera]) && <SidebarItem icon={<Icons.Ai />} label="Caja de QA" active={view === 'qa-box'} onClick={() => setView('qa-box')} />}
+          {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.Admin, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={view === 'my-projects'} onClick={() => setView('my-projects')} />}
+          {canSeeQA && <SidebarItem icon={<Icons.Ai />} label="Caja de QA" active={view === 'qa-box'} onClick={() => setView('qa-box')} />}
+          <SidebarItem icon={<Icons.Calendar />} label="Calendario" active={view === 'calendar'} onClick={() => setView('calendar')} />
           {(user.department === 'Finanzas' || user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider) ? <SidebarItem icon={<Icons.Clients />} label="Facturación" active={view === 'finances'} onClick={() => setView('finances')} /> : null}
           {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Users />} label="Usuarios" active={view === 'users'} onClick={() => setView('users')} />}
         </nav>
@@ -158,7 +167,7 @@ export const AppRouter: React.FC<{ renderView: (view: ViewState) => React.ReactN
   );
 };
 
-const SidebarItem: React.FC<{ icon: any, label: string, active: boolean, onClick: () => void }> = ({ icon: Icon, label, active, onClick }) => (
+const SidebarItem: React.FC<{ icon: React.ReactNode, label: string, active: boolean, onClick: () => void }> = ({ icon: Icon, label, active, onClick }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${active ? 'bg-apc-pink text-white shadow-lg shadow-apc-pink/20' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}>
     <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
       {typeof Icon === 'function' ? <Icon /> : Icon}

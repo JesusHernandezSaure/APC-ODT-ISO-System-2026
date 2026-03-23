@@ -65,7 +65,7 @@ export const calculateRoadmap = (selectedAreas: string[] = []) => {
  */
 export const normalizeString = (str: string) => {
   if (!str) return '';
-  let normalized = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const normalized = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   // Mapeo de áreas antiguas o alias
   if (normalized === 'medical content') return 'medico';
   return normalized;

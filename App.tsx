@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Project, UserRole, ViewState } from './types';
+import { UserRole, ViewState } from './types';
 import { Icons } from './constants';
 import { ODTProvider, useODT } from './ODTContext';
 import { AppRouter } from './AppRouter';
@@ -15,8 +15,10 @@ import { normalizeString } from './workflowConfig';
 
 import ErrorBoundary from './ErrorBoundary';
 
+import { CalendarView } from './CalendarView';
+
 const AppContent: React.FC = () => {
-  const { user, projects, users, checkSLA, updateBilling, updatePaymentStatus, loading, getRoadmapStages } = useODT();
+  const { projects, users, loading } = useODT();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
 
@@ -58,7 +60,7 @@ const AppContent: React.FC = () => {
       "Último Comentario", "Autor Último Comentario"
     ];
 
-    const escapeCSV = (val: any) => {
+    const escapeCSV = (val: string | number | boolean | null | undefined) => {
       if (val === null || val === undefined) return "";
       let str = String(val).replace(/"/g, '""');
       if (str.includes(",") || str.includes("\n") || str.includes('"')) {
@@ -129,78 +131,120 @@ const AppContent: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const renderMyInbox = () => {
+  const MyInbox: React.FC = () => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const { user, projects, users, checkSLA, getRoadmapStages } = useODT();
     const isGlobalLead = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
+    
     const myProjects = projects?.filter(p => {
-      if (isGlobalLead) return true;
-      const isDirectlyAssigned = p.asignaciones?.some(a => a.usuarioId === user?.id);
-      const isAreaLead = user?.role === UserRole.Lider_Operativo;
-      if (isAreaLead) {
-        const stages = getRoadmapStages(p);
-        const currentStage = stages[p.current_stage_index || 0] || '';
+      if (!isGlobalLead) {
+        const isDirectlyAssigned = p.asignaciones?.some(a => a.usuarioId === user?.id);
+        const isAreaLead = user?.role === UserRole.Lider_Operativo || user?.role === UserRole.Medico_Lider;
+        let isRelevant = isDirectlyAssigned;
         
-        // Lógica de pertenencia de etapa a departamento
-        const userDept = normalizeString(user?.department || '');
-        const normalizedCurrentStage = normalizeString(currentStage);
-        
-        let isMyCurrentStage = false;
-        if (userDept === 'qa' || user?.role === UserRole.Correccion) {
-          isMyCurrentStage = normalizedCurrentStage.includes('qa');
-        } else {
-          isMyCurrentStage = normalizedCurrentStage === userDept;
+        if (isAreaLead) {
+          const stages = getRoadmapStages(p);
+          const currentStage = stages[p.current_stage_index || 0] || '';
+          const userDept = normalizeString(user?.department || '');
+          const normalizedCurrentStage = normalizeString(currentStage);
+          
+          let isMyCurrentStage = false;
+          if (userDept === 'qa' || user?.role === UserRole.Correccion) {
+            isMyCurrentStage = normalizedCurrentStage.includes('qa');
+          } else {
+            isMyCurrentStage = normalizedCurrentStage === userDept;
+          }
+          isRelevant = isRelevant || isMyCurrentStage;
         }
-        
-        return isMyCurrentStage || isDirectlyAssigned;
+
+        // Medical staff should NOT see QA tasks in their production inbox
+        const isMedical = user?.role === UserRole.Medico_Lider || user?.role === UserRole.Medico_Opera;
+        if (isMedical) {
+          const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
+          const inQAStage = currentE.includes('REVISIÓN QA') || p.status === 'QA';
+          if (inQAStage) return false;
+        }
+
+        if (!isRelevant) return false;
       }
-      return isDirectlyAssigned;
+
+      if (searchTerm) {
+        const search = normalizeString(searchTerm);
+        return (
+          normalizeString(p.id).includes(search) ||
+          normalizeString(p.empresa).includes(search) ||
+          normalizeString(p.marca).includes(search) ||
+          normalizeString(p.producto).includes(search) ||
+          normalizeString(p.category || '').includes(search) ||
+          normalizeString(p.subCategory || '').includes(search) ||
+          normalizeString(p.status).includes(search)
+        );
+      }
+      
+      return true;
     }) || [];
     
     return (
       <div className="space-y-6">
-        <header className="flex justify-between items-end">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
             <h1 className="text-3xl font-black">Bandeja Operativa</h1>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">
               {isGlobalLead ? 'VISTA GLOBAL DE CARTERA APC' : 'Tareas técnicas asignadas directamente'}
             </p>
           </div>
+          
+          <div className="relative w-full md:w-72">
+            <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input 
+              type="text"
+              placeholder="BUSCAR ODT, MARCA, CLIENTE..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-apc-pink focus:border-transparent transition-all outline-none"
+            />
+          </div>
         </header>
         <div className="bg-white p-6 rounded-xl border-2 border-dashed border-slate-200">
            {myProjects.length === 0 ? (
-             <p className="text-slate-400 italic text-center py-10">No tiene tareas asignadas en este momento.</p>
+             <p className="text-slate-400 italic text-center py-10">
+               {searchTerm ? 'No se encontraron resultados para su búsqueda.' : 'No tiene tareas asignadas en este momento.'}
+             </p>
            ) : (
-             <ProjectTable projects={myProjects} onView={(p: Project) => setSelectedProjectId(p.id)} checkSLA={checkSLA} users={users} />
+             <ProjectTable projects={myProjects} onView={(id: string) => setSelectedProjectId(id)} checkSLA={checkSLA} users={users} />
            )}
         </div>
       </div>
     );
   };
 
-  const renderQABox = () => {
+  const QABox: React.FC = () => {
+    const { user, projects, users, checkSLA } = useODT();
     const qaProjects = projects?.filter(p => {
-      // Detección robusta de etapa QA por texto (snake y camel case)
-      const currentE = (p.etapa_actual || (p as any).etapaActual || '').toUpperCase();
+      const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
       const inQAStage = currentE.includes('REVISIÓN QA') || p.status === 'QA';
       
       if (!inQAStage) return false;
 
-      // Líder de QA y Admin: Ven TODO lo que está en etapa de QA
-      if (user?.role === UserRole.Correccion || user?.role === UserRole.Admin) return true;
+      // Admin, QA Leader, Medical Leader and Accounts see all pending QA
+      if (user?.role === UserRole.Correccion || user?.role === UserRole.Admin || user?.role === UserRole.Medico_Lider || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera) return true;
 
-      // QA Operativo: Solo ve lo que tiene asignado expresamente bajo el área 'QA'
-      if (user?.role === UserRole.QA_Opera) {
+      // QA Operatives and Medical Operatives see only assigned tasks in QA area
+      if (user?.role === UserRole.QA_Opera || user?.role === UserRole.Medico_Opera) {
         return p.asignaciones?.some(a => a.usuarioId === user?.id && a.area === 'QA');
       }
 
       return false;
     }) || [];
 
+    const isGlobalQA = user?.role === UserRole.Correccion || user?.role === UserRole.Admin || user?.role === UserRole.Medico_Lider;
+
     return (
       <div className="space-y-6 animate-fadeIn">
         <header>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Caja de QA</h1>
           <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1 italic">
-            {user?.role === UserRole.Correccion || user?.role === UserRole.Admin ? 'Supervisión Global de Calidad (Todas las Revisiones)' : 'Tareas de Revisión Delegadas a su Perfil'}
+            {isGlobalQA ? 'Supervisión Global de Calidad (Todas las Revisiones)' : 'Tareas de Revisión Delegadas a su Perfil'}
           </p>
         </header>
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl">
@@ -214,10 +258,10 @@ const AppContent: React.FC = () => {
            ) : (
              <ProjectTable 
                projects={qaProjects} 
-               onView={(p: Project) => setSelectedProjectId(p.id)} 
+               onView={(id: string) => setSelectedProjectId(id)} 
                checkSLA={checkSLA} 
                users={users}
-               highlightUnassigned={user?.role === UserRole.Correccion || user?.role === UserRole.Admin} 
+               highlightUnassigned={isGlobalQA} 
              />
            )}
         </div>
@@ -225,7 +269,8 @@ const AppContent: React.FC = () => {
     );
   };
 
-  const renderFinances = () => {
+  const Finances: React.FC = () => {
+    const { projects, updateBilling, updatePaymentStatus, getRoadmapStages } = useODT();
     const now = new Date();
     const billingProjects = projects?.filter(p => {
       const stages = getRoadmapStages(p);
@@ -335,11 +380,12 @@ const AppContent: React.FC = () => {
     if (selectedProject) return <ProjectDetail project={selectedProject} onBack={() => setSelectedProjectId(null)} />;
     switch (view) {
       case 'dashboard': return <AdminDashboard />;
-      case 'leader-dashboard': return <LeaderDashboard />;
-      case 'my-projects': return renderMyInbox();
+      case 'leader-dashboard': return <LeaderDashboard onViewProject={setSelectedProjectId} />;
+      case 'my-projects': return <MyInbox />;
       case 'clients': return <ClientsView onViewProject={setSelectedProjectId} />;
-      case 'qa-box': return renderQABox();
-      case 'finances': return renderFinances();
+      case 'qa-box': return <QABox />;
+      case 'finances': return <Finances />;
+      case 'calendar': return <CalendarView onOpenProject={setSelectedProjectId} />;
       case 'users': return <UsersView />;
       default: return <AdminDashboard />;
     }

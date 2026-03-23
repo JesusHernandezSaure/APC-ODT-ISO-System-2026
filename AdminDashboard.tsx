@@ -1,18 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useODT } from './ODTContext';
-import { Project, UserRole } from './types';
+import { UserRole } from './types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Icons } from './constants';
+import * as Constants from './constants';
 
 const AdminDashboard: React.FC = () => {
+  const { Icons } = Constants;
   const { projects, users } = useODT();
   const [executiveFilter, setExecutiveFilter] = useState('all');
-  const [periodFilter, setPeriodFilter] = useState('all');
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  const [periodFilter] = useState('all');
 
   const executives = useMemo(() => 
     (users || []).filter(u => u?.role === UserRole.Cuentas_Opera || u?.role === UserRole.Cuentas_Lider), 
@@ -31,6 +27,19 @@ const AdminDashboard: React.FC = () => {
     }
     return filtered;
   }, [projects, executiveFilter, periodFilter]);
+
+  const saturationData = useMemo(() => {
+    if (!filteredProjects) return [];
+    const counts: Record<string, number> = { 'Creativo': 0, 'Arte': 0, 'Cuentas': 0, 'QA': 0, 'Finanzas': 0 };
+    filteredProjects?.forEach(p => {
+      if (p?.status !== 'Finalizado' && p?.status !== 'Cancelado') {
+        p?.areas_seleccionadas?.forEach(area => {
+          if (counts[area] !== undefined) counts[area]++;
+        });
+      }
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [filteredProjects]);
 
   const handleExportMasterReport = () => {
     if (!projects || projects.length === 0) return;
@@ -111,18 +120,6 @@ const AdminDashboard: React.FC = () => {
       </div>
     );
   }
-
-  const saturationData = useMemo(() => {
-    const counts: Record<string, number> = { 'Creativo': 0, 'Arte': 0, 'Cuentas': 0, 'QA': 0, 'Finanzas': 0 };
-    filteredProjects?.forEach(p => {
-      if (p?.status !== 'Finalizado' && p?.status !== 'Cancelado') {
-        p?.areas_seleccionadas?.forEach(area => {
-          if (counts[area] !== undefined) counts[area]++;
-        });
-      }
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [filteredProjects]);
 
   return (
     <div className="space-y-6 animate-fadeIn">

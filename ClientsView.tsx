@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useODT } from './ODTContext';
-import { UserRole, Client, Project } from './types';
+import { UserRole, Client } from './types';
 import { Icons } from './constants';
 import NewODTForm from './NewODTForm';
 import { ProjectTable } from './ProjectTable';
@@ -39,7 +39,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       setNewClientName('');
       setIsCreatingClient(false);
       setDialog({ type: 'alert', message: `Carpeta "${newClientName}" creada correctamente.` });
-    } catch (error) {
+    } catch {
       setDialog({ type: 'alert', message: "Error al crear la carpeta." });
     }
   };
@@ -65,7 +65,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       setEditingClient(null);
       setRenamingName('');
       setDialog({ type: 'alert', message: "Nombre de carpeta actualizado correctamente." });
-    } catch (error) {
+    } catch {
       setDialog({ type: 'alert', message: "Error al renombrar la carpeta." });
     }
   };
@@ -87,7 +87,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
         try {
           await removeClient(client.id);
           setDialog({ type: 'alert', message: "Carpeta eliminada correctamente." });
-        } catch (error) {
+        } catch {
           setDialog({ type: 'alert', message: "Error al eliminar la carpeta." });
         }
       }
@@ -140,7 +140,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
            ) : (
              <ProjectTable 
                projects={clientODTs} 
-               onView={(p: Project) => onViewProject && onViewProject(p.id)} 
+               onView={(id: string) => onViewProject && onViewProject(id)} 
                checkSLA={checkSLA} 
                users={users}
              />

@@ -88,10 +88,13 @@ const Login: React.FC = () => {
   );
 };
 
-export const AppRouter: React.FC<{ renderView: (view: ViewState) => React.ReactNode }> = ({ renderView }) => {
+export const AppRouter: React.FC<{ 
+  view: ViewState | null, 
+  setView: (view: ViewState | null) => void,
+  renderView: (view: ViewState) => React.ReactNode 
+}> = ({ view, setView, renderView }) => {
   const { Icons } = Constants;
   const { user, logout } = useODT();
-  const [view, setView] = useState<ViewState | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -116,7 +119,7 @@ export const AppRouter: React.FC<{ renderView: (view: ViewState) => React.ReactN
         setTimeout(() => setView(nextView), 0);
       }
     }
-  }, [user, view]);
+  }, [user, view, setView]);
 
   if (!user || !view || view === 'login') return <Login />;
 

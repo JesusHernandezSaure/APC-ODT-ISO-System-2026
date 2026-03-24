@@ -737,7 +737,12 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!project) return;
 
     const currentChecklist = project.qaChecklist || { medica: false, estilo: false, referencias: false };
-    const newChecklist = { ...currentChecklist, [item]: value };
+    const newChecklist = { 
+      ...currentChecklist, 
+      [item]: value,
+      [`${item}Timestamp`]: value ? new Date().toISOString() : null,
+      [`${item}UserId`]: value ? user.id : null
+    };
 
     const labels: Record<string, string> = {
       medica: 'Revisión Médica (Precisión científica)',

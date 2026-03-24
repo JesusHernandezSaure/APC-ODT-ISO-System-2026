@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { useODT } from './ODTContext';
 import { UserRole, Project } from './types';
 import { normalizeString } from './workflowConfig';
+import { generateAreaReport, downloadCSV } from './reportUtils';
 
 interface LeaderDashboardProps {
   onViewProject: (id: string) => void;
@@ -11,6 +12,12 @@ interface LeaderDashboardProps {
 const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
   const { user, projects, users, delegateProject } = useODT();
   const [memberFilter, setMemberFilter] = useState('all');
+
+  const handleDownloadReport = () => {
+    if (!user || !projects || !users || !activeArea) return;
+    const reportData = generateAreaReport(projects, users, activeArea);
+    downloadCSV(reportData, `Reporte_Actividades_${activeArea}_${new Date().toISOString().split('T')[0]}`);
+  };
 
   const availableAreas = useMemo(() => {
     if (!user) return [];
@@ -99,12 +106,21 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end">
-          <label className="text-[9px] font-black text-slate-400 uppercase mb-1 mr-1">Filtrar por Colaborador</label>
-          <select className="bg-white border rounded-xl px-4 py-2 text-xs font-bold outline-none shadow-sm focus:ring-2 focus:ring-apc-pink" value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}>
-            <option value="all">TODO EL EQUIPO</option>
-            {teamMembers.map(m => <option key={m.id} value={m.id}>{m.id === user?.id ? `YO (${(m.name || '').toUpperCase()})` : (m.name || '').toUpperCase()}</option>)}
-          </select>
+        <div className="flex flex-col items-end gap-2">
+          <button 
+            onClick={handleDownloadReport}
+            className="flex items-center gap-2 px-4 py-2 bg-apc-green text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-apc-green/90 transition-all shadow-lg shadow-apc-green/20"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            DESCARGAR REPORTE {activeArea}
+          </button>
+          <div className="flex flex-col items-end">
+            <label className="text-[9px] font-black text-slate-400 uppercase mb-1 mr-1">Filtrar por Colaborador</label>
+            <select className="bg-white border rounded-xl px-4 py-2 text-xs font-bold outline-none shadow-sm focus:ring-2 focus:ring-apc-pink" value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}>
+              <option value="all">TODO EL EQUIPO</option>
+              {teamMembers.map(m => <option key={m.id} value={m.id}>{m.id === user?.id ? `YO (${(m.name || '').toUpperCase()})` : (m.name || '').toUpperCase()}</option>)}
+            </select>
+          </div>
         </div>
       </header>
 

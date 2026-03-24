@@ -32,13 +32,19 @@ const HelpChatbot: React.FC = () => {
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'undefined') {
+      setMessages(prev => [...prev, { role: 'assistant', content: "Error: La clave de API de Gemini (GEMINI_API_KEY) no está configurada. Por favor, configúrala en las variables de entorno de tu despliegue." }]);
+      return;
+    }
+
     const userMessage = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const ai = new GoogleGenAI({ apiKey });
       
       const systemInstruction = `
         Eres el Asistente Virtual de APC System, una plataforma de gestión de proyectos regida por la norma ISO 9001. Tu objetivo es ayudar al usuario a usar la plataforma.

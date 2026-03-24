@@ -94,6 +94,12 @@ export interface Project {
     medica: boolean;
     estilo: boolean;
     referencias: boolean;
+    medicaTimestamp?: string;
+    estiloTimestamp?: string;
+    referenciasTimestamp?: string;
+    medicaUserId?: string;
+    estiloUserId?: string;
+    referenciasUserId?: string;
   };
 }
 

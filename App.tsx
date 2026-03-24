@@ -22,8 +22,14 @@ import { CalendarView } from './CalendarView';
 
 const AppContent: React.FC = () => {
   const { projects, users, loading } = useODT();
+  const [view, setView] = useState<ViewState | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
+
+  // Reset selected project when view changes
+  React.useEffect(() => {
+    setSelectedProjectId(null);
+  }, [view]);
 
   if (!db || loading) {
     return (
@@ -397,7 +403,7 @@ const AppContent: React.FC = () => {
     }
   };
 
-  return <AppRouter renderView={renderView} />;
+  return <AppRouter view={view} setView={setView} renderView={renderView} />;
 };
 
 const App: React.FC = () => (

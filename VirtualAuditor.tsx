@@ -111,9 +111,15 @@ const VirtualAuditor: React.FC = () => {
   }, [projects, users, hasFinancialAccess]);
 
   const runAnalysis = async () => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'undefined') {
+      setAnalysis("Error: La clave de API de Gemini (GEMINI_API_KEY) no está configurada en el entorno. Si estás en Vercel, asegúrate de añadirla en las variables de entorno del proyecto y volver a desplegar.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const ai = new GoogleGenAI({ apiKey });
       
       const promptData = {
         totalProjects: stats.totalProjects,

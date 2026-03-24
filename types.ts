@@ -8,7 +8,8 @@ export enum UserRole {
   Correccion = 'Correccion',
   QA_Opera = 'QA_Opera',
   Medico_Lider = 'Medico_Lider',
-  Medico_Opera = 'Medico_Opera'
+  Medico_Opera = 'Medico_Opera',
+  Finanzas = 'Finanzas'
 }
 
 export interface User {
@@ -114,7 +115,10 @@ export type ViewState =
   | 'qa-box' 
   | 'finances' 
   | 'project-detail'
-  | 'calendar';
+  | 'calendar'
+  | 'auditor'
+  | 'commercial-intelligence'
+  | 'medical-manual';
 
 export interface LoginResult {
   success: boolean;

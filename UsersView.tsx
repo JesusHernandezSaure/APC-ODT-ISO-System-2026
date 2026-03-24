@@ -165,7 +165,7 @@ const UsersView: React.FC = () => {
       </div>
 
       {isEditing && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[1100] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-10 w-full max-w-md shadow-2xl animate-fadeIn border-t-8 border-apc-green">
             <h2 className="text-2xl font-black text-slate-900 mb-2">Configurar Usuario</h2>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-8">Gestión de Perfiles APC</p>
@@ -220,7 +220,7 @@ const UsersView: React.FC = () => {
 
       {/* Custom Dialog */}
       {dialog && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn text-center">
             <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${dialog.type === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-apc-green/10 text-apc-green'}`}>
               <Icons.Ai />

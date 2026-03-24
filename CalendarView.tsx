@@ -57,7 +57,7 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
     }
 
     return (
-      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fadeIn">
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-fadeIn">
         <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100">
           <div className="bg-apc-green p-6 text-white flex justify-between items-center">
             <div>

@@ -19,6 +19,17 @@ export default defineConfig(({ mode }) => {
       plugins: [
         react(),
         tailwindcss(),
+        {
+          name: 'strip-quill-sourcemap',
+          transform(code, id) {
+            if (id.includes('react-quill-new/dist/quill.snow.css')) {
+              return {
+                code: code.replace(/\/\*# sourceMappingURL=.* \*\//g, ''),
+                map: null,
+              };
+            }
+          },
+        },
       ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

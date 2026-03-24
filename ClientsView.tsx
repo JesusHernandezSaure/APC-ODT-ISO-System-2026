@@ -267,8 +267,8 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       </div>
 
       {isCreatingClient && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
             <h2 className="text-2xl font-black text-slate-900 mb-2">Nueva Carpeta</h2>
             <p className="text-xs text-slate-500 font-medium mb-6">El nombre debe coincidir exactamente con el nombre legal o comercial de la empresa.</p>
             <form onSubmit={handleCreateClient} className="space-y-4">
@@ -286,8 +286,8 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       )}
 
       {editingClient && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
             <h2 className="text-2xl font-black text-slate-900 mb-2">Renombrar Carpeta</h2>
             <p className="text-xs text-slate-500 font-medium mb-6">Modifique el nombre de la carpeta maestra.</p>
             <form onSubmit={handleRenameClient} className="space-y-4">
@@ -305,8 +305,8 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       )}
 
       {transferClient && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-           <div className="bg-white p-8 rounded-3xl w-full max-w-md border-t-8 border-slate-900 animate-fadeIn">
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+           <div className="bg-white p-8 rounded-3xl w-full max-w-md border-t-8 border-slate-900 animate-fadeIn relative z-[1210]">
               <h2 className="text-xl font-black mb-1">Transferir Cartera</h2>
               <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6">Cliente: {transferClient.name}</p>
               
@@ -342,8 +342,8 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
 
       {/* Custom Dialog */}
       {dialog && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn text-center">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn text-center relative z-[2010]">
             <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${dialog.type === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-apc-green/10 text-apc-green'}`}>
               <Ai />
             </div>

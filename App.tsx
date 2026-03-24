@@ -9,6 +9,9 @@ import LeaderDashboard from './LeaderDashboard';
 import ProjectDetail from './ProjectDetail';
 import ClientsView from './ClientsView';
 import UsersView from './UsersView';
+import VirtualAuditor from './VirtualAuditor';
+import CommercialIntelligence from './CommercialIntelligence';
+import MedicalUserManual from './MedicalUserManual';
 import { db } from './firebase';
 import { ProjectTable } from './ProjectTable';
 import { normalizeString } from './workflowConfig';
@@ -387,6 +390,9 @@ const AppContent: React.FC = () => {
       case 'finances': return <Finances />;
       case 'calendar': return <CalendarView onOpenProject={setSelectedProjectId} />;
       case 'users': return <UsersView />;
+      case 'auditor': return <VirtualAuditor />;
+      case 'commercial-intelligence': return <CommercialIntelligence />;
+      case 'medical-manual': return <MedicalUserManual />;
       default: return <AdminDashboard />;
     }
   };

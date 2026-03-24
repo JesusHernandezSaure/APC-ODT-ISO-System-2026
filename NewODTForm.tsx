@@ -92,8 +92,8 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn">
+    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn relative z-[1010]">
         <header className="bg-apc-green p-6 flex justify-between items-center text-white">
           <div>
             <h2 className="text-xl font-black tracking-tight">Apertura de ODT Master</h2>

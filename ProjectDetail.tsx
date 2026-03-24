@@ -938,8 +938,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       </div>
 
       {showAuditModal && auditResult && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto relative z-[1110]">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight">
                 <Icons.Ai className="text-blue-600" /> Auditoría ISO 9001:2015
@@ -998,8 +998,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       )}
 
       {showDelegationModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Delegar ODT</h2>
               <button onClick={() => setShowDelegationModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
@@ -1049,8 +1049,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       )}
 
       {dialog && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn text-center">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn text-center relative z-[2010]">
             <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-6 ${dialog.type === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
               {dialog.type === 'confirm' ? (
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>

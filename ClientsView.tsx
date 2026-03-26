@@ -24,12 +24,27 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm', message: string, onConfirm?: () => void } | null>(null);
 
   const canCreateClient = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
-  const isLeader = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
+  const isLeader = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Lider_Operativo;
 
   const accountsUsers = useMemo(() => 
     (users || []).filter(u => u.role === UserRole.Cuentas_Opera || u.role === UserRole.Cuentas_Lider),
     [users]
   );
+
+  const filteredClients = useMemo(() => {
+    if (!clients || !user) return [];
+    // Leaders see everything
+    if (isLeader) {
+      return clients;
+    }
+    // Operatives only see their own clients
+    // We include both Cuentas_Opera and Operativo just in case
+    if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Operativo) {
+      return clients.filter(c => c.ownerId === user.id);
+    }
+    // Default: return empty or restricted list for other roles
+    return [];
+  }, [clients, user, isLeader]);
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,13 +191,17 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {clients.length === 0 ? (
+        {filteredClients.length === 0 ? (
           <div className="col-span-full bg-white p-12 rounded-3xl border border-dashed border-slate-200 text-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
               <Folder />
             </div>
             <h3 className="text-lg font-black text-slate-900 mb-1">No hay carpetas de clientes</h3>
-            <p className="text-slate-500 text-sm mb-6">Comienza creando la primera carpeta maestra para organizar las ODTs.</p>
+            <p className="text-slate-500 text-sm mb-6">
+              {user.role === UserRole.Cuentas_Opera || user.role === UserRole.Operativo
+                ? "No tienes carpetas asignadas. Contacta a tu líder para que te asigne carteras."
+                : "Comienza creando la primera carpeta maestra para organizar las ODTs."}
+            </p>
             {canCreateClient && (
               <button 
                 onClick={() => setIsCreatingClient(true)}
@@ -193,7 +212,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
             )}
           </div>
         ) : (
-          clients.map(client => {
+          filteredClients.map(client => {
             const clientODTs = (projects || []).filter(p => p.clientId === client.id);
             const activeODTs = clientODTs.filter(p => p.status !== 'Finalizado' && p.status !== 'Cancelado').length;
             const owner = (users || []).find(u => u.id === client.ownerId);

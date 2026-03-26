@@ -76,6 +76,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         monto_proyectado: hasBilling ? monto : 0,
         justificacion_no_facturado: !hasBilling ? justification : '',
         areas_seleccionadas: selectedAreas,
+        assignedExecutives: client.assignedExecutives || [],
         referenceLinks: links.filter(l => l.trim() !== ''),
         brief,
         facturado: false,

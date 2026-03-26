@@ -1,8 +1,8 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { ref, onValue, update, get, set } from "firebase/database";
 import { db } from './firebase';
-import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material } from './types';
+import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material, Notification as ProjectNotification, ProjectComment } from './types';
 import { GLOBAL_STAGES, calculateRoadmap, getPriorityInfo, normalizeString } from './workflowConfig';
 
 const ODTContext = createContext<ODTContextType | undefined>(undefined);
@@ -25,8 +25,44 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<ProjectNotification[]>([]);
   const [loading, setLoading] = useState(!!db);
+  const [isAlertsOpen, setIsAlertsOpen] = useState(false);
+
+  const notificationAudio = useRef<HTMLAudioElement | null>(null);
+  const processedNotifications = useRef<Set<string>>(new Set());
+  const hasInitializedNotifications = useRef(false);
+
+  useEffect(() => {
+    notificationAudio.current = new Audio('/notification.mp3');
+  }, []);
+
+  useEffect(() => {
+    if (user && 'Notification' in window) {
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+    }
+  }, [user]);
+
+  const triggerNativeNotification = (notif: ProjectNotification) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification('APC System: ' + notif.title, {
+        body: notif.message,
+        icon: '/logo.png'
+      });
+      
+      n.onclick = () => {
+        window.focus();
+        setIsAlertsOpen(true);
+      };
+      
+      if (notificationAudio.current) {
+        notificationAudio.current.currentTime = 0;
+        notificationAudio.current.play().catch(e => console.warn("Audio playback blocked or failed:", e));
+      }
+    }
+  };
 
   useEffect(() => {
     if (!db) {
@@ -54,15 +90,26 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const notificationsRef = ref(db, 'notifications');
     onValue(notificationsRef, (s) => {
       const d = s.val();
-      if (d) {
-        const list = Object.keys(d).map(k => ({ ...d[k], id: k }));
-        setNotifications(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      const list: ProjectNotification[] = d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : [];
+      
+      if (!hasInitializedNotifications.current) {
+        list.forEach(n => processedNotifications.current.add(n.id));
+        hasInitializedNotifications.current = true;
       } else {
-        setNotifications([]);
+        list.forEach(n => {
+          if (n.userId === user?.id && !processedNotifications.current.has(n.id)) {
+            processedNotifications.current.add(n.id);
+            if (!n.read) {
+              triggerNativeNotification(n);
+            }
+          }
+        });
       }
+
+      setNotifications(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setLoading(false);
     });
-  }, []);
+  }, [user]);
 
   const getRoadmapStages = (project: Project) => {
     return calculateRoadmap(project.areas_seleccionadas || []);
@@ -93,12 +140,17 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const logout = () => { setUser(null); localStorage.removeItem('apc_session'); };
+  const logout = () => { 
+    setUser(null); 
+    localStorage.removeItem('apc_session'); 
+    processedNotifications.current.clear();
+    hasInitializedNotifications.current = false;
+  };
 
-  const createNotification = async (notif: Omit<Notification, 'id' | 'read' | 'createdAt'>) => {
+  const createNotification = async (notif: Omit<ProjectNotification, 'id' | 'read' | 'createdAt'>) => {
     if (!db) return;
     const id = `NOTIF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const newNotif: Notification = {
+    const newNotif: ProjectNotification = {
       ...notif,
       id,
       read: false,
@@ -172,20 +224,23 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (p.fecha_entrega) {
           const priority = getPriorityInfo(p.fecha_entrega);
           if (priority.level >= 1 && priority.level <= 3) {
-            // Notificar al Ejecutivo (Owner)
-            if (p.ownerId) {
+            // Notificar a los Ejecutivos (Owners)
+            if (p.assignedExecutives && p.assignedExecutives.length > 0) {
               const alertType = priority.level === 2 ? 'orange' : 'yellow';
               const alertTitle = `⚠️ PRIORIDAD ${priority.text.toUpperCase()} (${alertType.toUpperCase()})`;
-              const alreadyNotified = notifications.some(n => n.userId === p.ownerId && n.projectId === p.id && n.title === alertTitle);
               
-              if (!alreadyNotified) {
-                await createNotification({
-                  userId: p.ownerId,
-                  title: alertTitle,
-                  message: `La ODT ${p.id} está a ${4 - priority.level} día(s) de su fecha de entrega.`,
-                  type: 'sla_alert',
-                  projectId: p.id
-                });
+              for (const execId of p.assignedExecutives) {
+                const alreadyNotified = notifications.some(n => n.userId === execId && n.projectId === p.id && n.title === alertTitle);
+                
+                if (!alreadyNotified) {
+                  await createNotification({
+                    userId: execId,
+                    title: alertTitle,
+                    message: `La ODT ${p.id} está a ${4 - priority.level} día(s) de su fecha de entrega.`,
+                    type: 'sla_alert',
+                    projectId: p.id
+                  });
+                }
               }
             }
           }
@@ -207,7 +262,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       current_stage_index: 0,
       etapa_actual: GLOBAL_STAGES.START,
       etapaActual: GLOBAL_STAGES.START,
-      ownerId: user.id,
+      assignedExecutives: projectData.assignedExecutives || [user.id],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       comentarios: [
@@ -431,19 +486,21 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await update(ref(db, `projects/${projectId}`), updates);
 
       // Notificación al Creador/Ejecutivo (Owner)
-      if (project.ownerId) {
-        await createNotification({
-          userId: project.ownerId,
-          title: '⚠️ CORRECCIONES REQUERIDAS',
-          message: `La ODT ${projectId} requiere correcciones en ${areaAnterior}.`,
-          type: 'sla_alert',
-          projectId: projectId
-        });
+      if (project.assignedExecutives) {
+        for (const execId of project.assignedExecutives) {
+          await createNotification({
+            userId: execId,
+            title: '⚠️ CORRECCIONES REQUERIDAS',
+            message: `La ODT ${projectId} requiere correcciones en ${areaAnterior}.`,
+            type: 'sla_alert',
+            projectId: projectId
+          });
+        }
       }
 
       // Notificación para el responsable de la etapa anterior (quien debe corregir)
       const previousAssignment = project.asignaciones?.find(a => normalizeString(a.area) === normalizeString(areaAnterior));
-      if (previousAssignment && previousAssignment.usuarioId !== project.ownerId) {
+      if (previousAssignment && !project.assignedExecutives?.includes(previousAssignment.usuarioId)) {
         await createNotification({
           userId: previousAssignment.usuarioId,
           title: '❌ ODT RECHAZADA POR QA',
@@ -518,14 +575,16 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await update(ref(db, `projects/${projectId}`), updates);
 
       // Notificación al Creador/Ejecutivo (Owner)
-      if (project.ownerId) {
-        await createNotification({
-          userId: project.ownerId,
-          title: '⚠️ CORRECCIONES REQUERIDAS (CUENTAS)',
-          message: `La ODT ${projectId} requiere correcciones en ${targetArea} según revisión de Cuentas.`,
-          type: 'sla_alert',
-          projectId: projectId
-        });
+      if (project.assignedExecutives) {
+        for (const execId of project.assignedExecutives) {
+          await createNotification({
+            userId: execId,
+            title: '⚠️ CORRECCIONES REQUERIDAS (CUENTAS)',
+            message: `La ODT ${projectId} requiere correcciones en ${targetArea} según revisión de Cuentas.`,
+            type: 'sla_alert',
+            projectId: projectId
+          });
+        }
       }
 
       const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
@@ -652,7 +711,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (alarmTriggered) {
         const involvedUserIds = new Set<string>();
         project.asignaciones?.forEach(a => involvedUserIds.add(a.usuarioId));
-        if (project.ownerId) involvedUserIds.add(project.ownerId);
+        project.assignedExecutives?.forEach(id => involvedUserIds.add(id));
         
         for (const uid of involvedUserIds) {
           await createNotification({
@@ -669,15 +728,17 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await update(ref(db, `projects/${projectId}`), updates);
 
     // Notificación al Creador/Ejecutivo (Owner) si entra en correcciones
-    if (updates.status === 'Correcciones' && project.ownerId) {
+    if (updates.status === 'Correcciones' && project.assignedExecutives) {
       const targetArea = (updates.etapa_actual || updates.etapaActual) as string;
-      await createNotification({
-        userId: project.ownerId,
-        title: '⚠️ CORRECCIONES REQUERIDAS (CLIENTE)',
-        message: `La ODT ${projectId} requiere correcciones en ${targetArea} tras feedback del cliente.`,
-        type: 'sla_alert',
-        projectId: projectId
-      });
+      for (const execId of project.assignedExecutives) {
+        await createNotification({
+          userId: execId,
+          title: '⚠️ CORRECCIONES REQUERIDAS (CLIENTE)',
+          message: `La ODT ${projectId} requiere correcciones en ${targetArea} tras feedback del cliente.`,
+          type: 'sla_alert',
+          projectId: projectId
+        });
+      }
     }
   };
 
@@ -828,16 +889,16 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const reassignProjectAndFolder = async (projectId: string, clientId: string, newOwnerId: string, portfolio: boolean = false) => {
+  const reassignProjectAndFolder = async (projectId: string, clientId: string, newExecutives: string[], portfolio: boolean = false) => {
     if (!db || !user) return;
     const updates: Record<string, unknown> = {};
     if (portfolio) {
-      updates[`clients/${clientId}/ownerId`] = newOwnerId;
+      updates[`clients/${clientId}/assignedExecutives`] = newExecutives;
       projects.filter(p => p.clientId === clientId).forEach(p => {
-        updates[`projects/${p.id}/ownerId`] = newOwnerId;
+        updates[`projects/${p.id}/assignedExecutives`] = newExecutives;
       });
     } else {
-      updates[`projects/${projectId}/ownerId`] = newOwnerId;
+      updates[`projects/${projectId}/assignedExecutives`] = newExecutives;
     }
     await update(ref(db), updates);
   };
@@ -899,9 +960,57 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await update(ref(db, `projects/${projectId}`), updates);
   };
 
+  const updateProjectDate = async (projectId: string, newDate: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const newComment = {
+      id: `date-change-${Date.now()}`,
+      authorId: user.id,
+      authorName: user.name,
+      text: `Fecha de entrega actualizada de ${project.fecha_entrega ? new Date(project.fecha_entrega).toLocaleDateString() : 'N/A'} a ${new Date(newDate).toLocaleDateString()}`,
+      createdAt: new Date().toISOString(),
+      isSystemEvent: true
+    };
+
+    await update(ref(db, `projects/${projectId}`), { 
+      fecha_entrega: newDate,
+      updatedAt: new Date().toISOString(),
+      comentarios: [newComment, ...(project.comentarios || [])]
+    });
+  };
+
+  const updateProjectId = async (oldId: string, newId: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === oldId);
+    if (!project) return;
+
+    const newDbKey = newId.trim().toUpperCase();
+    if (newDbKey === oldId) return;
+
+    // Check if newId already exists
+    const existing = projects.find(p => p.id === newDbKey);
+    if (existing) throw new Error("El ID de ODT ya existe.");
+
+    const updates: Record<string, unknown> = {};
+    updates[`projects/${newDbKey}`] = { ...project, id: newDbKey, updatedAt: new Date().toISOString() };
+    updates[`projects/${oldId}`] = null;
+
+    // Update notifications that reference this project
+    notifications.forEach(n => {
+      if (n.projectId === oldId) {
+        updates[`notifications/${n.id}/projectId`] = newDbKey;
+      }
+    });
+
+    await update(ref(db), updates);
+  };
+
   return (
     <ODTContext.Provider value={{ 
       user, projects, clients, users, notifications, loading, login, logout, 
+      isAlertsOpen, setIsAlertsOpen,
       updateProjectStatus: async () => {}, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
       processQA, 
       processAccountsReview,
@@ -916,7 +1025,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: clientId, 
           name: n.trim(), 
           notes: notes || '', 
-          ownerId: user.id, 
+          assignedExecutives: [user.id], 
           createdAt: new Date().toISOString() 
         });
       }, 
@@ -932,7 +1041,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addTraceabilityComment,
       removeProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, getRoadmapStages,
       updateQAChecklist,
-      addMaterial, updateMaterialStatus, markNotificationAsRead, clearNotifications
+      addMaterial, updateMaterialStatus, updateProjectDate, updateProjectId, markNotificationAsRead, clearNotifications
     }}>
       {children}
     </ODTContext.Provider>

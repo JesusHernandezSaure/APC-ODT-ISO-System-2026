@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserRole, ViewState } from './types';
 import { Icons } from './constants';
 import { ODTProvider, useODT } from './ODTContext';
@@ -22,14 +23,8 @@ import { CalendarView } from './CalendarView';
 
 const AppContent: React.FC = () => {
   const { projects, users, loading } = useODT();
-  const [view, setView] = useState<ViewState | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const selectedProject = projects.find(p => p.id === selectedProjectId) || null;
-
-  // Reset selected project when view changes
-  React.useEffect(() => {
-    setSelectedProjectId(null);
-  }, [view]);
+  const navigate = useNavigate();
 
   if (!db || loading) {
     return (
@@ -140,7 +135,7 @@ const AppContent: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const MyInbox: React.FC = () => {
+  const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProject }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const { user, projects, users, checkSLA, getRoadmapStages } = useODT();
     const isGlobalLead = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
@@ -149,28 +144,28 @@ const AppContent: React.FC = () => {
       if (!isGlobalLead) {
         const isDirectlyAssigned = p.asignaciones?.some(a => a.usuarioId === user?.id);
         const isAreaLead = user?.role === UserRole.Lider_Operativo || user?.role === UserRole.Medico_Lider;
-        let isRelevant = isDirectlyAssigned;
+        const isOwner = p.assignedExecutives?.includes(user?.id || '');
         
-        if (isAreaLead) {
-          const stages = getRoadmapStages(p);
-          const currentStage = stages[p.current_stage_index || 0] || '';
-          const userDept = normalizeString(user?.department || '');
-          const normalizedCurrentStage = normalizeString(currentStage);
-          
-          let isMyCurrentStage = false;
-          if (userDept === 'qa' || user?.role === UserRole.Correccion) {
-            isMyCurrentStage = normalizedCurrentStage.includes('qa');
-          } else {
-            isMyCurrentStage = normalizedCurrentStage === userDept;
-          }
-          isRelevant = isRelevant || isMyCurrentStage;
+        const stages = getRoadmapStages(p);
+        const currentStage = stages[p.current_stage_index || 0] || '';
+        const userDept = normalizeString(user?.department || '');
+        const normalizedCurrentStage = normalizeString(currentStage);
+        
+        let isMyCurrentStage = false;
+        if (userDept === 'qa' || user?.role === UserRole.Correccion) {
+          isMyCurrentStage = normalizedCurrentStage.includes('qa');
+        } else if (userDept === 'cuentas') {
+          isMyCurrentStage = normalizedCurrentStage.includes('cuentas');
+        } else {
+          isMyCurrentStage = normalizedCurrentStage === userDept;
         }
+
+        const isRelevant = isDirectlyAssigned || (isAreaLead && isMyCurrentStage) || (isOwner && isMyCurrentStage);
 
         // Medical staff should NOT see QA tasks in their production inbox
         const isMedical = user?.role === UserRole.Medico_Lider || user?.role === UserRole.Medico_Opera;
         if (isMedical) {
-          const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
-          const inQAStage = currentE.includes('REVISIÓN QA') || p.status === 'QA';
+          const inQAStage = normalizedCurrentStage.includes('qa') || p.status === 'QA';
           if (inQAStage) return false;
         }
 
@@ -220,14 +215,14 @@ const AppContent: React.FC = () => {
                {searchTerm ? 'No se encontraron resultados para su búsqueda.' : 'No tiene tareas asignadas en este momento.'}
              </p>
            ) : (
-             <ProjectTable projects={myProjects} onView={(id: string) => setSelectedProjectId(id)} checkSLA={checkSLA} users={users} />
+             <ProjectTable projects={myProjects} onView={onViewProject} checkSLA={checkSLA} users={users} />
            )}
         </div>
       </div>
     );
   };
 
-  const QABox: React.FC = () => {
+  const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProject }) => {
     const { user, projects, users, checkSLA } = useODT();
     const qaProjects = projects?.filter(p => {
       const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
@@ -267,7 +262,7 @@ const AppContent: React.FC = () => {
            ) : (
              <ProjectTable 
                projects={qaProjects} 
-               onView={(id: string) => setSelectedProjectId(id)} 
+               onView={onViewProject} 
                checkSLA={checkSLA} 
                users={users}
                highlightUnassigned={isGlobalQA} 
@@ -278,7 +273,7 @@ const AppContent: React.FC = () => {
     );
   };
 
-  const Finances: React.FC = () => {
+  const Finances: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProject }) => {
     const { projects, updateBilling, updatePaymentStatus, getRoadmapStages } = useODT();
     const now = new Date();
     const billingProjects = projects?.filter(p => {
@@ -366,7 +361,7 @@ const AppContent: React.FC = () => {
                        </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                       <button onClick={() => setSelectedProjectId(p.id)} className="p-2 hover:bg-slate-200 rounded-xl transition-all">
+                       <button onClick={() => onViewProject(p.id)} className="p-2 hover:bg-slate-200 rounded-xl transition-all">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                        </button>
                     </td>
@@ -385,16 +380,26 @@ const AppContent: React.FC = () => {
     );
   };
 
-  const renderView = (view: ViewState) => {
-    if (selectedProject) return <ProjectDetail project={selectedProject} onBack={() => setSelectedProjectId(null)} />;
+  const renderView = (view: ViewState | string, params?: { id?: string }) => {
+    const onViewProject = (id: string) => {
+      navigate(`/project/${id}`);
+    };
+
+    if (view === 'project-detail') {
+      const id = params?.id || selectedProjectId;
+      const project = projects.find(p => p.id === id);
+      if (project) return <ProjectDetail project={project} onBack={() => navigate(-1)} />;
+      return <div className="p-20 text-center font-black uppercase text-slate-400">Proyecto no encontrado</div>;
+    }
+
     switch (view) {
       case 'dashboard': return <AdminDashboard />;
-      case 'leader-dashboard': return <LeaderDashboard onViewProject={setSelectedProjectId} />;
-      case 'my-projects': return <MyInbox />;
-      case 'clients': return <ClientsView onViewProject={setSelectedProjectId} />;
-      case 'qa-box': return <QABox />;
-      case 'finances': return <Finances />;
-      case 'calendar': return <CalendarView onOpenProject={setSelectedProjectId} />;
+      case 'leader-dashboard': return <LeaderDashboard onViewProject={onViewProject} />;
+      case 'my-projects': return <MyInbox onViewProject={onViewProject} />;
+      case 'clients': return <ClientsView onViewProject={onViewProject} />;
+      case 'qa-box': return <QABox onViewProject={onViewProject} />;
+      case 'finances': return <Finances onViewProject={onViewProject} />;
+      case 'calendar': return <CalendarView onOpenProject={onViewProject} />;
       case 'users': return <UsersView />;
       case 'auditor': return <VirtualAuditor />;
       case 'commercial-intelligence': return <CommercialIntelligence />;
@@ -403,7 +408,7 @@ const AppContent: React.FC = () => {
     }
   };
 
-  return <AppRouter view={view} setView={setView} renderView={renderView} />;
+  return <AppRouter renderView={renderView} onRouteReset={() => setSelectedProjectId(null)} />;
 };
 
 const App: React.FC = () => (
@@ -413,5 +418,6 @@ const App: React.FC = () => (
     </ODTProvider>
   </ErrorBoundary>
 );
+
 
 export default App;

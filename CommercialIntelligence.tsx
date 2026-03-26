@@ -29,13 +29,13 @@ const CommercialIntelligence: React.FC = () => {
 
     // Role-based scoping
     if (currentUser.role === UserRole.Cuentas_Opera) {
-      base = base.filter(p => p.ownerId === currentUser.id);
+      base = base.filter(p => p.assignedExecutives?.includes(currentUser.id));
     }
 
     // Apply Filters
     return base.filter(p => {
       const matchBrand = filterBrand === 'Todas' || p.marca === filterBrand;
-      const matchExecutive = filterExecutive === 'Todos' || p.ownerId === filterExecutive;
+      const matchExecutive = filterExecutive === 'Todos' || p.assignedExecutives?.includes(filterExecutive);
       
       const projectDate = new Date(p.createdAt);
       const matchDateFrom = !dateFrom || projectDate >= new Date(dateFrom);

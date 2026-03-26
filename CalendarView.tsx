@@ -133,7 +133,7 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
           <button onClick={prevMonth} className="p-2 hover:bg-slate-50 rounded-xl transition-all text-slate-400 hover:text-apc-pink">
             <Icons.ChevronLeft className="w-5 h-5" />
           </button>
-          <h2 className="text-sm font-black uppercase tracking-widest text-slate-700 min-w-[150px] text-center">
+          <h2 className="text-base font-black uppercase tracking-widest text-slate-700 min-w-[150px] text-center">
             {monthNames[month]} {year}
           </h2>
           <button onClick={nextMonth} className="p-2 hover:bg-slate-50 rounded-xl transition-all text-slate-400 hover:text-apc-pink">
@@ -145,7 +145,7 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
       <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl overflow-hidden">
         <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-100">
           {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
-            <div key={d} className="py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">{d}</div>
+            <div key={d} className="py-4 text-center text-xs font-black text-slate-400 uppercase tracking-widest">{d}</div>
           ))}
         </div>
         <div className="grid grid-cols-7">
@@ -159,7 +159,7 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
             
             return (
               <div key={day} className={`h-32 border-b border-r border-slate-50 p-2 hover:bg-slate-50/50 transition-all relative ${isToday ? 'bg-apc-pink/5' : ''}`}>
-                <span className={`text-[10px] font-black ${isToday ? 'text-apc-pink' : 'text-slate-300'}`}>{day}</span>
+                <span className={`text-sm font-black ${isToday ? 'text-apc-pink' : 'text-slate-300'}`}>{day}</span>
                 <div className="mt-1 space-y-1 overflow-y-auto max-h-[80%] custom-scrollbar">
                   {dayProjects.map(p => (
                     <button 
@@ -167,8 +167,8 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
                       onClick={() => setSelectedProject(p)}
                       className="w-full text-left px-2 py-1 bg-white border border-slate-100 rounded-md shadow-sm hover:border-apc-pink transition-all group"
                     >
-                      <div className="text-[8px] font-black text-apc-pink truncate">{p.id}</div>
-                      <div className="text-[7px] font-bold text-slate-600 truncate uppercase group-hover:text-slate-900">{p.empresa}</div>
+                      <div className="text-[10px] font-black text-apc-pink truncate">{p.id}</div>
+                      <div className="text-[9px] font-bold text-slate-600 truncate uppercase group-hover:text-slate-900">{p.empresa}</div>
                     </button>
                   ))}
                 </div>

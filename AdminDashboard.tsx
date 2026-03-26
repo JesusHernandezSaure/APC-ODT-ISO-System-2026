@@ -17,7 +17,7 @@ const AdminDashboard: React.FC = () => {
   const filteredProjects = useMemo(() => {
     if (!projects) return [];
     let filtered = [...projects];
-    if (executiveFilter !== 'all') filtered = filtered.filter(p => p?.ownerId === executiveFilter);
+    if (executiveFilter !== 'all') filtered = filtered.filter(p => p?.assignedExecutives?.includes(executiveFilter));
     const now = new Date();
     if (periodFilter === 'this-month') {
       filtered = filtered.filter(p => {

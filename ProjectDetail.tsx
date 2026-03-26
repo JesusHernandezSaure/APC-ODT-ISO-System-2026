@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { useODT } from './ODTContext';
@@ -28,10 +29,20 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     processClientFeedback,
     addTraceabilityComment,
     updateQAChecklist,
-    delegateProject
+    delegateProject,
+    updateProjectDate,
+    updateProjectId,
+    reassignProjectAndFolder
   } = useODT();
+  const navigate = useNavigate();
   const [briefContent, setBriefContent] = useState(project.brief);
+  const [isEditingId, setIsEditingId] = useState(false);
+  const [newId, setNewId] = useState(project.id);
   const [traceabilityComment, setTraceabilityComment] = useState('');
+
+  React.useEffect(() => {
+    setNewId(project.id);
+  }, [project.id]);
   const [qaFeedback, setQaFeedback] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
   const [deliveryLink, setDeliveryLink] = useState('');
@@ -41,7 +52,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [auditResult, setAuditResult] = useState<{ score: number, findings: string[], recommendations: string[], isoClause: string } | null>(null);
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [showDelegationModal, setShowDelegationModal] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [selectedExecutives, setSelectedExecutives] = useState<string[]>(project.assignedExecutives || []);
   const [selectedDelegateId, setSelectedDelegateId] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [newDeliveryDate, setNewDeliveryDate] = useState(project.fecha_entrega || '');
 
   // New state for Closing Stage
   const [accountsFeedback, setAccountsFeedback] = useState('');
@@ -99,6 +114,35 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
     return false;
   }, [user, currentIdx, isQAStage, isProductionStage, isInitialStage, currentStageName, project.asignaciones, roadmapStages]);
+
+  const canAddObservation = useMemo(() => {
+    if (!user) return false;
+    if (user.role === UserRole.Admin) return true;
+    if (user.department === 'Cuentas' || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera) return true;
+    if (project.areas_seleccionadas?.includes(user.department)) return true;
+    return false;
+  }, [user, project.areas_seleccionadas]);
+
+  const renderTextWithLinks = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline break-all"
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
 
   const handleAdvance = async () => {
     if (!canOperate) return;
@@ -249,6 +293,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   };
 
   const canDeleteODT = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
+  const isAccountOwnerOrLeader = (project.assignedExecutives?.includes(user?.id || '') && user?.role === UserRole.Cuentas_Opera) || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Admin;
   const canEditBrief = canOperate || user?.role === UserRole.Admin || user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
   const canManageMaterials = user?.department === 'Digital' || user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera || user?.role === UserRole.Admin;
   const canRunAudit = user?.role === UserRole.Admin || user?.role === UserRole.Correccion || user?.role === UserRole.Medico_Lider || user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
@@ -292,47 +337,145 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   return (
     <div className="flex flex-col lg:flex-row gap-8 animate-fadeIn pb-20">
       <div className="flex-1 space-y-6">
-        <header className="flex items-center justify-between bg-apc-green p-6 rounded-3xl text-white shadow-xl shadow-apc-green/20 mb-8">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 bg-white/10 border border-white/20 rounded-xl hover:bg-white/20 transition-all text-white shadow-sm">
-               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        <header className="flex flex-col md:flex-row items-start justify-between bg-apc-green p-8 rounded-[2.5rem] text-white shadow-2xl shadow-apc-green/20 mb-8 gap-6">
+          <div className="flex items-start gap-6 flex-1 w-full">
+            <button 
+              onClick={onBack} 
+              className="group flex items-center gap-2 px-4 py-2 bg-white/10 border border-white/20 rounded-xl hover:bg-white/20 transition-all text-white shadow-sm mt-1"
+              title="Volver"
+            >
+               <Icons.ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+               <span className="text-[10px] font-black uppercase tracking-widest hidden md:block">Volver</span>
             </button>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black tracking-tight">{project.id}</h1>
-                {project.fecha_entrega && (
-                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full ${priority.color} text-white text-[8px] font-black uppercase shadow-sm`}>
-                    <div className={`w-1.5 h-1.5 bg-white ${priority.shape === 'rhombus' ? 'rotate-45' : 'rounded-full'}`}></div>
-                    {priority.text}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mb-1 group">
+                {isEditingId ? (
+                  <div className="flex items-center gap-2 w-full max-w-md">
+                    <input 
+                      value={newId}
+                      onChange={e => setNewId(e.target.value.toUpperCase())}
+                      className="bg-white/10 border border-white/30 rounded-lg px-3 py-1 text-white font-black text-xl outline-none focus:ring-2 focus:ring-white/50 w-full"
+                      autoFocus
+                    />
+                    <button 
+                      onClick={async () => {
+                        if (!newId.trim() || newId === project.id) {
+                          setIsEditingId(false);
+                          return;
+                        }
+                        try {
+                          await updateProjectId(project.id, newId.trim());
+                          setIsEditingId(false);
+                          navigate(`/project/${newId.trim()}`, { replace: true });
+                        } catch (e: unknown) {
+                          const message = e instanceof Error ? e.message : "Error al actualizar el ID.";
+                          setDialog({ type: 'alert', message });
+                        }
+                      }}
+                      className="p-2 bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-all"
+                    >
+                      <Icons.Check className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => { setIsEditingId(false); setNewId(project.id); }}
+                      className="p-2 bg-rose-500 rounded-lg hover:bg-rose-600 transition-all"
+                    >
+                      <Icons.X className="w-4 h-4" />
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    <h1 className="text-3xl font-black tracking-tighter uppercase truncate leading-tight">
+                      {project.id}
+                    </h1>
+                    {isAccountOwnerOrLeader && (
+                      <button 
+                        onClick={() => setIsEditingId(true)}
+                        className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/20 rounded-lg transition-all"
+                        title="Editar ID"
+                      >
+                        <Icons.Edit className="w-4 h-4" />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-white/70 font-bold uppercase tracking-widest">{project.empresa} - {project.producto}</p>
-                <span className="text-[8px] bg-white/10 text-white/80 px-1.5 py-0.5 rounded font-black uppercase">
-                  Owner: {users.find(u => u.id === project.ownerId)?.name || 'Sistema'}
+              <h2 className="text-lg font-bold text-white/90 uppercase tracking-wide leading-snug">
+                {project.empresa} | {project.producto}
+              </h2>
+              <div className="flex items-center gap-2 pt-3">
+                <span className="text-[10px] bg-white/10 text-white px-3 py-1.5 rounded-xl font-black uppercase border border-white/10 flex items-center gap-2 shadow-sm">
+                  <Icons.Users className="w-3 h-3 opacity-60" />
+                  Ejecutivos: {(project.assignedExecutives || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean).join(', ') || 'Sistema'}
+                  {(user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider) && (
+                    <button 
+                      onClick={() => {
+                        setSelectedExecutives(project.assignedExecutives || []);
+                        setShowReassignModal(true);
+                      }}
+                      className="ml-1 p-1 hover:bg-white/20 rounded-lg transition-all"
+                      title="Reasignar Ejecutivos"
+                    >
+                      <Icons.Edit className="w-2.5 h-2.5" />
+                    </button>
+                  )}
                 </span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {canDeleteODT && (
-              <button 
-                onClick={handleDeleteODT}
-                className="mr-4 p-2.5 bg-rose-600 text-white rounded-xl hover:bg-rose-700 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-200"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Eliminar ODT
-              </button>
-            )}
-            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${project.status === 'Finalizado' ? 'bg-emerald-100 text-emerald-700' : project.status === 'QA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+
+          <div className="flex flex-col items-end gap-3 shrink-0 w-full md:w-auto">
+            {/* Etapa / Status */}
+            <div className={`px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-[0.15em] shadow-xl ${
+              project.status === 'Finalizado' ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 
+              project.status === 'QA' ? 'bg-amber-500 text-white shadow-amber-500/20' : 
+              'bg-white text-apc-green shadow-black/5'
+            }`}>
               {project.status}
-            </span>
+            </div>
+
+            {/* Fecha de Entrega */}
+            {project.fecha_entrega && (
+              <div className="flex items-center gap-2.5 px-4 py-2 bg-white/15 backdrop-blur-sm rounded-2xl text-white text-[10px] font-black uppercase border border-white/20 shadow-sm">
+                <Icons.Calendar className="w-4 h-4 opacity-70" />
+                Entrega: {new Date(project.fecha_entrega + 'T00:00:00').toLocaleDateString()}
+              </div>
+            )}
+
+            {/* Prioridad */}
+            {project.fecha_entrega && (
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl ${priority.color} text-white text-[10px] font-black uppercase shadow-lg border border-white/10`}>
+                <div className={`w-2 h-2 bg-white shadow-sm ${priority.shape === 'rhombus' ? 'rotate-45' : 'rounded-full'}`}></div>
+                {priority.text}
+              </div>
+            )}
+
+            {/* Botones de Acción */}
+            <div className="flex flex-col gap-2 w-full mt-2">
+              {isAccountOwnerOrLeader && (
+                <button 
+                  onClick={() => setShowDatePicker(true)}
+                  className="px-4 py-2.5 bg-apc-pink text-white rounded-2xl hover:bg-apc-pink/90 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-apc-pink/20 border border-white/10"
+                >
+                  <Icons.Calendar className="w-4 h-4" />
+                  Cambiar Fecha
+                </button>
+              )}
+              {canDeleteODT && (
+                <button 
+                  onClick={handleDeleteODT}
+                  className="px-4 py-2.5 bg-rose-600 text-white rounded-2xl hover:bg-rose-700 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-rose-600/20 border border-white/10"
+                >
+                  <Icons.Trash className="w-4 h-4" />
+                  Eliminar ODT
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
         {/* Alertas de Escalación */}
-        {project.status === 'Correcciones' && user?.id === project.ownerId && (
+        {project.status === 'Correcciones' && project.assignedExecutives?.includes(user?.id || '') && (
           <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-xl mb-6 animate-pulse shadow-sm">
             <div className="flex items-center gap-3">
               <Icons.Alert className="text-amber-600" />
@@ -375,7 +518,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
               <Icons.Project className="text-apc-green" /> Brief Maestro APC
             </h3>
-            {canEditBrief && (
+            {isAccountOwnerOrLeader && (
               <button onClick={() => {
                 updateBrief(project.id, briefContent);
                 setDialog({ type: 'alert', message: "Brief Maestro guardado exitosamente." });
@@ -395,7 +538,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               Materiales Aprobados (Historial)
             </h3>
             <div className="space-y-3">
-              {project.delivery_history.map((item, idx) => (
+              {(project.delivery_history || []).map((item, idx) => (
                 <div key={idx} className={`p-3 rounded-xl border flex items-center justify-between ${idx === 0 ? 'bg-emerald-50 border-emerald-200 ring-2 ring-emerald-100' : 'bg-slate-50 border-slate-100 opacity-70'}`}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -478,7 +621,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               {(!project.materiales || project.materiales.length === 0) ? (
                 <p className="text-center text-slate-400 text-xs italic py-4">No hay materiales registrados en esta parrilla.</p>
               ) : (
-                project.materiales.map(mat => {
+                (project.materiales || []).map(mat => {
                   const actions = getMaterialActions(mat);
                   return (
                     <div key={mat.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 border rounded-2xl hover:bg-slate-50 transition-all gap-4">
@@ -557,15 +700,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         <div className="bg-white p-6 rounded-3xl border shadow-sm">
           <div className="flex justify-between items-center mb-6 border-b pb-2">
             <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest">Logs de Trazabilidad ISO 9001</h3>
-            {(user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera) && (
-              <div className="flex gap-2 items-center">
-                <input 
-                  type="text" 
-                  placeholder="Agregar observación..."
-                  className="text-[10px] px-3 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-apc-pink w-48 font-medium"
-                  value={traceabilityComment}
-                  onChange={(e) => setTraceabilityComment(e.target.value)}
-                />
+          </div>
+          
+          {canAddObservation && (
+            <div className="mb-6 space-y-3">
+              <textarea 
+                placeholder="Escribe una observación detallada aquí..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-apc-pink font-medium resize-y min-h-[100px]"
+                value={traceabilityComment}
+                onChange={(e) => setTraceabilityComment(e.target.value)}
+              />
+              <div className="flex justify-end">
                 <button 
                   onClick={async () => {
                     if (!traceabilityComment.trim()) return;
@@ -573,15 +718,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                     setTraceabilityComment('');
                     setDialog({ type: 'alert', message: 'Observación agregada y notificada.' });
                   }}
-                  className="bg-apc-green text-white p-1.5 rounded-lg hover:bg-apc-green/80 transition-all"
+                  className="bg-apc-green text-white px-6 py-2 rounded-xl hover:bg-apc-green/80 transition-all text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-apc-green/20"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m5 12 5 5L20 7"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 12l5 5L20 7"/></svg>
+                  Agregar Observación
                 </button>
               </div>
-            )}
-          </div>
-          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-            {project.comentarios.map(c => {
+            </div>
+          )}
+
+          <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+            {(project.comentarios || []).map(c => {
               const isDelivery = c.text.includes('Entrega Técnica');
               return (
                 <div key={c.id} className={`p-4 rounded-2xl text-xs border-l-4 ${
@@ -590,8 +737,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   isDelivery ? 'bg-blue-50 border-blue-500' :
                   c.isSystemEvent ? 'bg-slate-50 border-slate-300' : 'bg-white border-blue-400 shadow-sm'
                 }`}>
-                  <p className="font-black uppercase text-[8px] text-slate-400 mb-1">{c.authorName} • {new Date(c.createdAt).toLocaleString()}</p>
-                  <p className="text-slate-700 font-medium leading-relaxed">{c.text}</p>
+                  <p className="font-black uppercase text-[10px] text-slate-400 mb-1">{c.authorName} • {new Date(c.createdAt).toLocaleString()}</p>
+                  <p className="text-slate-700 font-medium leading-relaxed whitespace-pre-wrap">
+                    {renderTextWithLinks(c.text)}
+                  </p>
                 </div>
               );
             })}
@@ -709,7 +858,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                       onChange={(e) => setReturnArea(e.target.value)}
                     >
                       <option value="">Regresar a...</option>
-                      {project.areas_seleccionadas.map(a => <option key={a} value={a}>{a}</option>)}
+                      {(project.areas_seleccionadas || []).map(a => <option key={a} value={a}>{a}</option>)}
                     </select>
                     <button 
                       onClick={() => {
@@ -793,7 +942,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                             onChange={(e) => setReturnArea(e.target.value)}
                           >
                             <option value="">Regresar a área...</option>
-                            {project.areas_seleccionadas.map(a => <option key={a} value={a}>{a}</option>)}
+                            {(project.areas_seleccionadas || []).map(a => <option key={a} value={a}>{a}</option>)}
                           </select>
                         )}
                         <button 
@@ -891,30 +1040,36 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         <div className="bg-white p-6 rounded-3xl border shadow-sm overflow-hidden">
           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Ruta de Calidad APC</h3>
           <div className="relative space-y-8">
-            <div className="absolute top-0 left-[14px] w-0.5 h-full bg-slate-100 -z-0"></div>
-            {roadmapStages.map((stage, idx) => {
-              const isActive = idx === currentIdx;
-              const isCompleted = idx < currentIdx;
-              return (
-                <div key={idx} className="flex gap-4 items-start relative z-10">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all shrink-0 ${
-                    isActive ? 'bg-apc-pink border-apc-pink/20 scale-110 shadow-lg shadow-apc-pink/20' : 
-                    isCompleted ? 'bg-emerald-500 border-emerald-50' : 'bg-slate-50 border-white'
-                  }`}>
-                    {isCompleted && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><path d="M20 6 9 17l-5-5"/></svg>}
-                    {isActive && <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-[10px] font-black uppercase tracking-tighter leading-tight mt-1 ${isActive ? 'text-apc-pink' : isCompleted ? 'text-emerald-600' : 'text-slate-300'}`}>
-                      {stage}
-                    </p>
-                    {isActive && (
-                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Etapa Actual</p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {(!roadmapStages || roadmapStages.length === 0) ? (
+              <p className="text-center text-slate-400 text-xs italic py-4">No hay áreas asignadas para esta ruta.</p>
+            ) : (
+              <>
+                <div className="absolute top-0 left-[14px] w-0.5 h-full bg-slate-100 -z-0"></div>
+                {(roadmapStages || []).map((stage, idx) => {
+                  const isActive = idx === currentIdx;
+                  const isCompleted = idx < currentIdx;
+                  return (
+                    <div key={idx} className="flex gap-4 items-start relative z-10">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all shrink-0 ${
+                        isActive ? 'bg-apc-pink border-apc-pink/20 scale-110 shadow-lg shadow-apc-pink/20' : 
+                        isCompleted ? 'bg-emerald-500 border-emerald-50' : 'bg-slate-50 border-white'
+                      }`}>
+                        {isCompleted && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><path d="M20 6 9 17l-5-5"/></svg>}
+                        {isActive && <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[10px] font-black uppercase tracking-tighter leading-tight mt-1 ${isActive ? 'text-apc-pink' : isCompleted ? 'text-emerald-600' : 'text-slate-300'}`}>
+                          {stage}
+                        </p>
+                        {isActive && (
+                          <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Etapa Actual</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         </div>
 
@@ -966,7 +1121,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   <div className="w-1.5 h-1.5 bg-rose-600 rounded-full"></div> Hallazgos Críticos
                 </h4>
                 <div className="space-y-2">
-                  {auditResult.findings.map((f, i) => (
+                  {(auditResult.findings || []).map((f, i) => (
                     <div key={i} className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs font-medium text-rose-700">
                       {f}
                     </div>
@@ -978,7 +1133,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full"></div> Recomendaciones de Mejora
                 </h4>
                 <div className="space-y-2">
-                  {auditResult.recommendations.map((r, i) => (
+                  {(auditResult.recommendations || []).map((r, i) => (
                     <div key={i} className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-xs font-medium text-emerald-700">
                       {r}
                     </div>
@@ -993,6 +1148,65 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             >
               Entendido
             </button>
+          </div>
+        </div>
+      )}
+
+      {showReassignModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Reasignar Ejecutivos</h2>
+              <button onClick={() => setShowReassignModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <Icons.Close />
+              </button>
+            </div>
+            
+            <p className="text-xs text-slate-500 font-medium mb-6">
+              Seleccione los ejecutivos de cuenta responsables de esta ODT:
+            </p>
+
+            <div className="space-y-4">
+              <div className="max-h-60 overflow-y-auto space-y-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                {(users || []).filter(u => u.role === UserRole.Cuentas_Opera || u.role === UserRole.Cuentas_Lider).map(u => (
+                  <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg cursor-pointer transition-colors">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedExecutives.includes(u.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedExecutives([...selectedExecutives, u.id]);
+                        } else {
+                          setSelectedExecutives(selectedExecutives.filter(id => id !== u.id));
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-slate-300 text-apc-pink focus:ring-apc-pink"
+                    />
+                    <span className="text-sm font-bold text-slate-700">{u.name}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button 
+                  onClick={() => setShowReassignModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-500 font-black text-xs rounded-xl hover:bg-slate-200 uppercase tracking-widest transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={async () => {
+                    await reassignProjectAndFolder(project.id, project.clientId || '', selectedExecutives, false);
+                    setShowReassignModal(false);
+                    setDialog({ type: 'alert', message: 'Ejecutivos reasignados correctamente.' });
+                  }}
+                  disabled={selectedExecutives.length === 0}
+                  className="flex-1 py-3 bg-slate-900 text-white font-black text-xs rounded-xl hover:bg-slate-800 disabled:opacity-50 transition-all uppercase tracking-widest shadow-lg"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1020,7 +1234,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-apc-pink"
                 >
                   <option value="">Seleccionar...</option>
-                  {users
+                  {(users || [])
                     .filter(u => {
                       const currentStage = (project.etapa_actual || project.etapaActual || '').toUpperCase();
                       const isQA = currentStage.includes('QA') || project.status === 'QA';
@@ -1043,6 +1257,46 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               >
                 Confirmar Delegación
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDatePicker && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-100 relative z-[1110]">
+            <h3 className="text-xl font-black text-slate-800 mb-6 uppercase tracking-tight flex items-center gap-3">
+              <Icons.Calendar className="text-apc-pink" /> Cambiar Fecha de Entrega
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Nueva Fecha de Entrega</label>
+                <input 
+                  type="date" 
+                  value={newDeliveryDate}
+                  onChange={(e) => setNewDeliveryDate(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-apc-pink font-bold text-slate-700"
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button 
+                  onClick={() => setShowDatePicker(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-500 font-black text-[10px] rounded-xl hover:bg-slate-200 uppercase tracking-widest transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={async () => {
+                    if (!newDeliveryDate) return;
+                    await updateProjectDate(project.id, newDeliveryDate);
+                    setShowDatePicker(false);
+                    setDialog({ type: 'alert', message: 'Fecha de entrega actualizada correctamente.' });
+                  }}
+                  className="flex-1 py-3 bg-apc-green text-white font-black text-[10px] rounded-xl hover:bg-apc-green/80 uppercase tracking-widest transition-all shadow-lg shadow-apc-green/20"
+                >
+                  Confirmar
+                </button>
+              </div>
             </div>
           </div>
         </div>

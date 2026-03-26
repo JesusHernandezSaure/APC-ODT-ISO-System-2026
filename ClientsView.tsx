@@ -17,34 +17,28 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [creatingODTForClient, setCreatingODTForClient] = useState<Client | null>(null);
   const [transferClient, setTransferClient] = useState<Client | null>(null);
-  const [targetOwner, setTargetOwner] = useState('');
+  const [targetOwners, setTargetOwners] = useState<string[]>([]);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [renamingName, setRenamingName] = useState('');
 
   const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm', message: string, onConfirm?: () => void } | null>(null);
 
   const canCreateClient = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
-  const isLeader = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Lider_Operativo;
+  const isLeader = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
+
+  const filteredClients = useMemo(() => {
+    if (!clients || !user) return [];
+    // Los ejecutivos operativos del área de cuentas (Cuentas_Opera) solo ven sus carpetas asignadas
+    if (user.role === UserRole.Cuentas_Opera) {
+      return clients.filter(c => c.assignedExecutives?.includes(user.id));
+    }
+    return clients;
+  }, [clients, user]);
 
   const accountsUsers = useMemo(() => 
     (users || []).filter(u => u.role === UserRole.Cuentas_Opera || u.role === UserRole.Cuentas_Lider),
     [users]
   );
-
-  const filteredClients = useMemo(() => {
-    if (!clients || !user) return [];
-    // Leaders see everything
-    if (isLeader) {
-      return clients;
-    }
-    // Operatives only see their own clients
-    // We include both Cuentas_Opera and Operativo just in case
-    if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Operativo) {
-      return clients.filter(c => c.ownerId === user.id);
-    }
-    // Default: return empty or restricted list for other roles
-    return [];
-  }, [clients, user, isLeader]);
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,12 +54,12 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   };
 
   const handleQuickTransfer = async () => {
-    if (!transferClient || !targetOwner) return;
+    if (!transferClient || targetOwners.length === 0) return;
     setDialog({
       type: 'confirm',
-      message: `¿Transferir toda la cartera de "${transferClient.name}" a este nuevo ejecutivo?`,
+      message: `¿Transferir toda la cartera de "${transferClient.name}" a los ejecutivos seleccionados?`,
       onConfirm: async () => {
-        await reassignProjectAndFolder('', transferClient.id, targetOwner, true);
+        await reassignProjectAndFolder('', transferClient.id, targetOwners, true);
         setTransferClient(null);
         setDialog({ type: 'alert', message: "Cartera transferida exitosamente." });
       }
@@ -86,6 +80,10 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   };
 
   const handleDeleteClient = (client: Client) => {
+    if (!isLeader) {
+      setDialog({ type: 'alert', message: "No tiene permisos para realizar esta acción." });
+      return;
+    }
     const clientODTs = (projects || []).filter(p => p.clientId === client.id);
     if (clientODTs.length > 0) {
       setDialog({ 
@@ -197,11 +195,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
               <Folder />
             </div>
             <h3 className="text-lg font-black text-slate-900 mb-1">No hay carpetas de clientes</h3>
-            <p className="text-slate-500 text-sm mb-6">
-              {user.role === UserRole.Cuentas_Opera || user.role === UserRole.Operativo
-                ? "No tienes carpetas asignadas. Contacta a tu líder para que te asigne carteras."
-                : "Comienza creando la primera carpeta maestra para organizar las ODTs."}
-            </p>
+            <p className="text-slate-500 text-sm mb-6">Comienza creando la primera carpeta maestra para organizar las ODTs.</p>
             {canCreateClient && (
               <button 
                 onClick={() => setIsCreatingClient(true)}
@@ -215,7 +209,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
           filteredClients.map(client => {
             const clientODTs = (projects || []).filter(p => p.clientId === client.id);
             const activeODTs = clientODTs.filter(p => p.status !== 'Finalizado' && p.status !== 'Cancelado').length;
-            const owner = (users || []).find(u => u.id === client.ownerId);
+            const owners = (users || []).filter(u => client.assignedExecutives?.includes(u.id));
             
             return (
               <div key={client.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/30 hover:shadow-2xl hover:border-apc-green/30 transition-all group flex flex-col justify-between">
@@ -237,18 +231,23 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                           >
                             <Edit />
                           </button>
-                          <button 
-                            onClick={() => handleDeleteClient(client)}
-                            title="Eliminar Carpeta"
-                            className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-apc-pink transition-all"
-                          >
-                            <Trash />
-                          </button>
+                          {isLeader && (
+                            <button 
+                              onClick={() => handleDeleteClient(client)}
+                              title="Eliminar Carpeta"
+                              className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-apc-pink transition-all"
+                            >
+                              <Trash />
+                            </button>
+                          )}
                         </>
                       )}
                       {isLeader && (
                         <button 
-                          onClick={() => setTransferClient(client)}
+                          onClick={() => {
+                            setTransferClient(client);
+                            setTargetOwners(client.assignedExecutives || []);
+                          }}
                           title="Transferir Cartera"
                           className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-900 transition-all"
                         >
@@ -258,7 +257,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                     </div>
                   </div>
                   <h3 className="text-xl font-black text-slate-800 leading-tight mb-1 truncate">{client.name}</h3>
-                  <p className="text-[10px] text-slate-400 font-black mb-4 uppercase truncate">Ejecutivo: {owner?.name || 'SISTEMA'}</p>
+                  <p className="text-[10px] text-slate-400 font-black mb-4 uppercase truncate">Ejecutivos: {owners.map(o => o.name).join(', ') || 'SISTEMA'}</p>
                   
                   <div className="flex gap-4 mb-8">
                      <div>
@@ -331,25 +330,36 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
               
               <div className="space-y-6">
                 <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase mb-2 block">Nuevo Dueño de Cuenta</label>
-                  <select 
-                    value={targetOwner} 
-                    onChange={e => setTargetOwner(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border-2 rounded-xl font-bold outline-none appearance-none"
-                  >
-                    <option value="">-- Seleccione Ejecutivo --</option>
-                    {accountsUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
+                  <label className="text-[10px] font-black text-slate-500 uppercase mb-2 block">Ejecutivos Asignados</label>
+                  <div className="max-h-48 overflow-y-auto space-y-2 p-3 bg-slate-50 border-2 rounded-xl">
+                    {accountsUsers.map(u => (
+                      <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg cursor-pointer transition-colors">
+                        <input 
+                          type="checkbox" 
+                          checked={targetOwners.includes(u.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setTargetOwners([...targetOwners, u.id]);
+                            } else {
+                              setTargetOwners(targetOwners.filter(id => id !== u.id));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-apc-green focus:ring-apc-green"
+                        />
+                        <span className="text-sm font-bold text-slate-700">{u.name}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 
                 <p className="text-[10px] text-slate-500 italic bg-slate-50 p-4 rounded-xl">
-                  * Al transferir, el nuevo ejecutivo será dueño de la carpeta y de TODAS sus ODTs históricas y activas.
+                  * Al transferir, los ejecutivos seleccionados serán dueños de la carpeta y de TODAS sus ODTs históricas y activas.
                 </p>
 
                 <div className="flex gap-3">
                   <button onClick={() => setTransferClient(null)} className="flex-1 py-3 text-xs font-black text-slate-400 uppercase">Cerrar</button>
                   <button 
-                    disabled={!targetOwner}
+                    disabled={targetOwners.length === 0}
                     onClick={handleQuickTransfer} 
                     className="flex-2 px-8 py-3 bg-slate-900 text-white font-black text-xs rounded-xl hover:bg-slate-800 disabled:opacity-50 transition-all"
                   >EJECUTAR TRASPASO</button>

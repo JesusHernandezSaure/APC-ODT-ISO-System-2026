@@ -1,13 +1,12 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { createPortal } from 'react-dom';
 import { useODT } from './ODTContext';
 import { Icons } from './constants';
 import { motion, AnimatePresence } from 'motion/react';
 
 const NotificationCenter: React.FC = () => {
-  const { user, notifications, markNotificationAsRead, clearNotifications } = useODT();
-  const [isOpen, setIsOpen] = useState(false);
+  const { user, notifications, markNotificationAsRead, clearNotifications, isAlertsOpen, setIsAlertsOpen } = useODT();
 
   if (!user) return null;
 
@@ -16,11 +15,11 @@ const NotificationCenter: React.FC = () => {
 
   const dropdown = (
     <AnimatePresence>
-      {isOpen && (
+      {isAlertsOpen && (
         <>
           <div 
             className="fixed inset-0 z-[9998] bg-transparent" 
-            onClick={() => setIsOpen(false)}
+            onClick={() => setIsAlertsOpen(false)}
           />
           <motion.div 
             initial={{ opacity: 0, x: -20, scale: 0.95 }}
@@ -86,7 +85,7 @@ const NotificationCenter: React.FC = () => {
   return (
     <div className="relative">
       <button 
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsAlertsOpen(!isAlertsOpen)}
         className="relative p-2 text-slate-400 hover:text-white transition-colors"
       >
         <Icons.Ai />

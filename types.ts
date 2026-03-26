@@ -70,7 +70,7 @@ export interface Project {
   facturado?: boolean;
   pagado?: boolean;
   justificacion_no_facturado?: string;
-  ownerId?: string;
+  assignedExecutives?: string[];
   createdAt: string;
   updatedAt: string;
   fecha_entrega?: string;
@@ -107,7 +107,7 @@ export interface Client {
   id: string;
   name: string;
   notes?: string;
-  ownerId: string;
+  assignedExecutives?: string[];
   createdAt: string;
 }
 
@@ -149,6 +149,8 @@ export interface ODTContextType {
   users: User[];
   notifications: Notification[];
   loading: boolean;
+  isAlertsOpen: boolean;
+  setIsAlertsOpen: (open: boolean) => void;
   login: (username: string, pass: string) => Promise<LoginResult>;
   logout: () => void;
   updateProjectStatus: (projectId: string, newStatus: Project['status'], comment: string) => Promise<void>;
@@ -161,7 +163,7 @@ export interface ODTContextType {
   updatePaymentStatus: (projectId: string, pagado: boolean) => Promise<void>;
   checkSLA: (project: Project) => { isAlert: boolean; reason?: string };
   delegateProject: (projectId: string, area: string, userId: string) => Promise<void>;
-  reassignProjectAndFolder: (projectId: string, clientId: string, newOwnerId: string, portfolio?: boolean) => Promise<void>;
+  reassignProjectAndFolder: (projectId: string, clientId: string, newExecutives: string[], portfolio?: boolean) => Promise<void>;
   addClient: (name: string, notes?: string) => Promise<void>;
   updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
   removeClient: (clientId: string) => Promise<void>;
@@ -176,6 +178,8 @@ export interface ODTContextType {
   getRoadmapStages: (project: Project) => string[];
   addMaterial: (projectId: string, material: Omit<Material, 'id' | 'creadoPor' | 'fechaCreacion'>) => Promise<void>;
   updateMaterialStatus: (projectId: string, materialId: string, newStatus: Material['estado']) => Promise<void>;
+  updateProjectDate: (projectId: string, newDate: string) => Promise<void>;
+  updateProjectId: (oldId: string, newId: string) => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   clearNotifications: () => Promise<void>;
 }

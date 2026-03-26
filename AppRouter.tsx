@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useODT } from './ODTContext';
 import { UserRole, ViewState } from './types';
 import * as Constants from './constants';
@@ -89,42 +90,69 @@ const Login: React.FC = () => {
 };
 
 export const AppRouter: React.FC<{ 
-  view: ViewState | null, 
-  setView: (view: ViewState | null) => void,
-  renderView: (view: ViewState) => React.ReactNode 
-}> = ({ view, setView, renderView }) => {
+  renderView: (view: ViewState | string, params?: { id?: string }) => React.ReactNode,
+  onRouteReset?: () => void
+}> = ({ renderView, onRouteReset }) => {
   const { Icons } = Constants;
   const { user, logout } = useODT();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Track last main module to keep it highlighted when in project detail
+  const lastModule = useMemo(() => {
+    if (location.pathname !== '/login' && !location.pathname.startsWith('/project/')) {
+      sessionStorage.setItem('last_module', location.pathname);
+      return location.pathname;
+    }
+    return sessionStorage.getItem('last_module') || '';
+  }, [location.pathname]);
+
+  // Reset state on route change (Request 6)
+  useEffect(() => {
+    if (onRouteReset) onRouteReset();
+  }, [location.pathname, onRouteReset]);
 
   useEffect(() => {
     if (!user) {
-      if (view !== 'login') {
-        setTimeout(() => setView('login'), 0);
+      if (location.pathname !== '/login') {
+        navigate('/login');
       }
       return;
     }
-    // Solo establecer la vista inicial si estamos en login o no hay vista definida
-    if (view === 'login' || !view) {
-      let nextView: ViewState = 'dashboard';
-      if (user.role === UserRole.Correccion || user.role === UserRole.Medico_Lider) nextView = 'leader-dashboard';
-      else if (user.role === UserRole.QA_Opera) nextView = 'qa-box';
-      else if (user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas) nextView = 'finances';
-      else if (user.role === UserRole.Lider_Operativo) nextView = 'leader-dashboard';
-      else if (user.role === UserRole.Operativo) nextView = 'my-projects';
-      else if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Cuentas_Lider) nextView = 'clients';
-      
-      if (view !== nextView) {
-        setTimeout(() => setView(nextView), 0);
-      }
-    }
-  }, [user, view, setView]);
 
-  if (!user || !view || view === 'login') return <Login />;
+    // Redirect to initial view if at root or login
+    if (location.pathname === '/' || location.pathname === '/login') {
+      let nextPath = '/dashboard';
+      if (user.role === UserRole.Correccion || user.role === UserRole.Medico_Lider) nextPath = '/leader-dashboard';
+      else if (user.role === UserRole.QA_Opera) nextPath = '/qa-box';
+      else if (user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas) nextPath = '/finances';
+      else if (user.role === UserRole.Lider_Operativo) nextPath = '/leader-dashboard';
+      else if (user.role === UserRole.Operativo) nextPath = '/my-projects';
+      else if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Cuentas_Lider) nextPath = '/clients';
+      
+      navigate(nextPath);
+    }
+  }, [user, location.pathname, navigate]);
+
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
 
   const canSee = (roles: UserRole[]) => roles.includes(user.role) || user.role === UserRole.Admin;
   const canSeeQA = canSee([UserRole.Correccion, UserRole.Admin, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]);
+
+  const isModuleActive = (path: string) => {
+    if (location.pathname === path) return true;
+    if (location.pathname.startsWith('/project/') && lastModule === path) return true;
+    return false;
+  };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -165,22 +193,22 @@ export const AppRouter: React.FC<{
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 relative z-10">
-          {canSee([UserRole.Admin, UserRole.Cuentas_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={view === 'dashboard'} isCollapsed={isCollapsed} onClick={() => { setView('dashboard'); setIsMobileMenuOpen(false); }} />}
-          {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={view === 'leader-dashboard'} isCollapsed={isCollapsed} onClick={() => { setView('leader-dashboard'); setIsMobileMenuOpen(false); }} />}
-          {canSee([UserRole.Cuentas_Opera, UserRole.Cuentas_Lider, UserRole.Admin, UserRole.Operativo, UserRole.Lider_Operativo]) && <SidebarItem icon={<Icons.Clients />} label="Clientes / Archivo" active={view === 'clients'} isCollapsed={isCollapsed} onClick={() => { setView('clients'); setIsMobileMenuOpen(false); }} />}
-          {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.Admin, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={view === 'my-projects'} isCollapsed={isCollapsed} onClick={() => { setView('my-projects'); setIsMobileMenuOpen(false); }} />}
-          {canSeeQA && <SidebarItem icon={<Icons.Ai />} label="Caja de QA" active={view === 'qa-box'} isCollapsed={isCollapsed} onClick={() => { setView('qa-box'); setIsMobileMenuOpen(false); }} />}
-          <SidebarItem icon={<Icons.Calendar />} label="Calendario" active={view === 'calendar'} isCollapsed={isCollapsed} onClick={() => { setView('calendar'); setIsMobileMenuOpen(false); }} />
-          {(user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas || user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider) ? <SidebarItem icon={<Icons.Clients />} label="Facturación" active={view === 'finances'} isCollapsed={isCollapsed} onClick={() => { setView('finances'); setIsMobileMenuOpen(false); }} /> : null}
-          {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Users />} label="Usuarios" active={view === 'users'} isCollapsed={isCollapsed} onClick={() => { setView('users'); setIsMobileMenuOpen(false); }} />}
+          {canSee([UserRole.Admin, UserRole.Cuentas_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={isModuleActive('/dashboard')} isCollapsed={isCollapsed} onClick={() => { navigate('/dashboard'); setIsMobileMenuOpen(false); }} />}
+          {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={isModuleActive('/leader-dashboard')} isCollapsed={isCollapsed} onClick={() => { navigate('/leader-dashboard'); setIsMobileMenuOpen(false); }} />}
+          {canSee([UserRole.Cuentas_Opera, UserRole.Cuentas_Lider, UserRole.Admin]) && <SidebarItem icon={<Icons.Clients />} label="Clientes / Archivo" active={isModuleActive('/clients')} isCollapsed={isCollapsed} onClick={() => { navigate('/clients'); setIsMobileMenuOpen(false); }} />}
+          {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.Admin, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={isModuleActive('/my-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/my-projects'); setIsMobileMenuOpen(false); }} />}
+          {canSeeQA && <SidebarItem icon={<Icons.Ai />} label="Caja de QA" active={isModuleActive('/qa-box')} isCollapsed={isCollapsed} onClick={() => { navigate('/qa-box'); setIsMobileMenuOpen(false); }} />}
+          <SidebarItem icon={<Icons.Calendar />} label="Calendario" active={isModuleActive('/calendar')} isCollapsed={isCollapsed} onClick={() => { navigate('/calendar'); setIsMobileMenuOpen(false); }} />
+          {(user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas || user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider) ? <SidebarItem icon={<Icons.Clients />} label="Facturación" active={isModuleActive('/finances')} isCollapsed={isCollapsed} onClick={() => { navigate('/finances'); setIsMobileMenuOpen(false); }} /> : null}
+          {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Users />} label="Usuarios" active={isModuleActive('/users')} isCollapsed={isCollapsed} onClick={() => { navigate('/users'); setIsMobileMenuOpen(false); }} />}
           {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera || user.department === 'Administración' || user.department === 'Finanzas') && (
-            <SidebarItem icon={<Icons.TrendingUp />} label="Inteligencia" active={view === 'commercial-intelligence'} isCollapsed={isCollapsed} onClick={() => { setView('commercial-intelligence'); setIsMobileMenuOpen(false); }} />
+            <SidebarItem icon={<Icons.TrendingUp />} label="Inteligencia" active={isModuleActive('/commercial-intelligence')} isCollapsed={isCollapsed} onClick={() => { navigate('/commercial-intelligence'); setIsMobileMenuOpen(false); }} />
           )}
           {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.department === 'Administración' || user.department === 'Finanzas') && (
-            <SidebarItem icon={<Icons.Ai />} label="Auditor Virtual" active={view === 'auditor'} isCollapsed={isCollapsed} onClick={() => { setView('auditor'); setIsMobileMenuOpen(false); }} />
+            <SidebarItem icon={<Icons.Ai />} label="Auditor Virtual" active={isModuleActive('/auditor')} isCollapsed={isCollapsed} onClick={() => { navigate('/auditor'); setIsMobileMenuOpen(false); }} />
           )}
           {(user.role === UserRole.Medico_Lider || user.role === UserRole.Medico_Opera || user.role === UserRole.Admin) && (
-            <SidebarItem icon={<Icons.Project />} label="Manual Médico" active={view === 'medical-manual'} isCollapsed={isCollapsed} onClick={() => { setView('medical-manual'); setIsMobileMenuOpen(false); }} />
+            <SidebarItem icon={<Icons.Project />} label="Manual Médico" active={isModuleActive('/medical-manual')} isCollapsed={isCollapsed} onClick={() => { navigate('/medical-manual'); setIsMobileMenuOpen(false); }} />
           )}
         </nav>
         
@@ -218,12 +246,31 @@ export const AppRouter: React.FC<{
         {/* Global background pattern */}
         <div className={`fixed inset-0 pointer-events-none opacity-[0.02] bg-striped-green ${isCollapsed ? 'md:ml-20' : 'md:ml-64'} transition-all duration-300`}></div>
         <div className="relative z-10 pt-16 md:pt-0">
-          {renderView(view)}
+          <Routes>
+            <Route path="/dashboard" element={renderView('dashboard')} />
+            <Route path="/leader-dashboard" element={renderView('leader-dashboard')} />
+            <Route path="/clients" element={renderView('clients')} />
+            <Route path="/my-projects" element={renderView('my-projects')} />
+            <Route path="/qa-box" element={renderView('qa-box')} />
+            <Route path="/calendar" element={renderView('calendar')} />
+            <Route path="/finances" element={renderView('finances')} />
+            <Route path="/users" element={renderView('users')} />
+            <Route path="/commercial-intelligence" element={renderView('commercial-intelligence')} />
+            <Route path="/auditor" element={renderView('auditor')} />
+            <Route path="/medical-manual" element={renderView('medical-manual')} />
+            <Route path="/project/:id" element={<ProjectDetailRoute renderView={renderView} />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </div>
         <HelpChatbot />
       </main>
     </div>
   );
+};
+
+const ProjectDetailRoute: React.FC<{ renderView: (view: ViewState | string, params?: { id?: string }) => React.ReactNode }> = ({ renderView }) => {
+  const { id } = useParams();
+  return <>{renderView('project-detail', { id })}</>;
 };
 
 const SidebarItem: React.FC<{ icon: React.ReactNode, label: string, active: boolean, isCollapsed?: boolean, onClick: () => void }> = ({ icon: Icon, label, active, isCollapsed, onClick }) => (

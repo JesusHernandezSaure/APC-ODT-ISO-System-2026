@@ -201,6 +201,7 @@ export const AppRouter: React.FC<{
           <SidebarItem icon={<Icons.Calendar />} label="Calendario" active={isModuleActive('/calendar')} isCollapsed={isCollapsed} onClick={() => { navigate('/calendar'); setIsMobileMenuOpen(false); }} />
           {(user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas || user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider) ? <SidebarItem icon={<Icons.Clients />} label="Facturación" active={isModuleActive('/finances')} isCollapsed={isCollapsed} onClick={() => { navigate('/finances'); setIsMobileMenuOpen(false); }} /> : null}
           {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Users />} label="Usuarios" active={isModuleActive('/users')} isCollapsed={isCollapsed} onClick={() => { navigate('/users'); setIsMobileMenuOpen(false); }} />}
+          {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Trash />} label="ODTs Eliminadas" active={isModuleActive('/deleted-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/deleted-projects'); setIsMobileMenuOpen(false); }} />}
           {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera || user.department === 'Administración' || user.department === 'Finanzas') && (
             <SidebarItem icon={<Icons.TrendingUp />} label="Inteligencia" active={isModuleActive('/commercial-intelligence')} isCollapsed={isCollapsed} onClick={() => { navigate('/commercial-intelligence'); setIsMobileMenuOpen(false); }} />
           )}
@@ -258,6 +259,7 @@ export const AppRouter: React.FC<{
             <Route path="/commercial-intelligence" element={renderView('commercial-intelligence')} />
             <Route path="/auditor" element={renderView('auditor')} />
             <Route path="/medical-manual" element={renderView('medical-manual')} />
+            <Route path="/deleted-projects" element={renderView('deleted-projects')} />
             <Route path="/project/:id" element={<ProjectDetailRoute renderView={renderView} />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

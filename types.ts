@@ -90,6 +90,11 @@ export interface Project {
   is_alarm_active?: boolean;
   internal_qa_rejection_count?: number;
   contadorCorrecciones?: number;
+  deleted?: boolean;
+  deletedBy?: string;
+  deletedByName?: string;
+  deletedAt?: string;
+  deletionReason?: string;
   qaChecklist?: {
     medica: boolean;
     estilo: boolean;
@@ -124,7 +129,8 @@ export type ViewState =
   | 'calendar'
   | 'auditor'
   | 'commercial-intelligence'
-  | 'medical-manual';
+  | 'medical-manual'
+  | 'deleted-projects';
 
 export interface LoginResult {
   success: boolean;
@@ -145,6 +151,7 @@ export interface Notification {
 export interface ODTContextType {
   user: User | null;
   projects: Project[];
+  deletedProjects: Project[];
   clients: Client[];
   users: User[];
   notifications: Notification[];

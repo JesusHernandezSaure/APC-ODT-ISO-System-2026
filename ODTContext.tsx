@@ -23,6 +23,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return null;
   });
   const [projects, setProjects] = useState<Project[]>([]);
+  const [deletedProjects, setDeletedProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [notifications, setNotifications] = useState<ProjectNotification[]>([]);
@@ -74,7 +75,9 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     onValue(projectsRef, (s) => {
       const d = s.val();
-      setProjects(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
+      const all: Project[] = d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : [];
+      setProjects(all.filter(p => !p.deleted));
+      setDeletedProjects(all.filter(p => p.deleted));
     });
 
     onValue(usersRef, (s) => {
@@ -295,12 +298,42 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const removeProject = async (projectId: string) => {
-    if (!db || (user?.role !== UserRole.Admin && user?.role !== UserRole.Cuentas_Lider)) return;
+  const removeProject = async (projectId: string, reason?: string) => {
+    if (!db || !user || (user.role !== UserRole.Admin && user.role !== UserRole.Cuentas_Lider)) return;
     try {
-      await set(ref(db, `projects/${projectId}`), null);
+      const project = projects.find(p => p.id === projectId);
+      if (!project) return;
+
+      const updates: Record<string, unknown> = {
+        deleted: true,
+        deletedBy: user.id,
+        deletedByName: user.name,
+        deletedAt: new Date().toISOString(),
+        deletionReason: reason || 'Eliminado por usuario',
+        updatedAt: new Date().toISOString()
+      };
+
+      await update(ref(db, `projects/${projectId}`), updates);
     } catch (error) {
-      console.error("Fallo al purgar ODT en Firebase:", error);
+      console.error("Error al eliminar ODT:", error);
+      throw error;
+    }
+  };
+
+  const restoreProject = async (projectId: string) => {
+    if (!db || !user || user.role !== UserRole.Admin) return;
+    try {
+      const updates: Record<string, unknown> = {
+        deleted: null,
+        deletedBy: null,
+        deletedByName: null,
+        deletedAt: null,
+        deletionReason: null,
+        updatedAt: new Date().toISOString()
+      };
+      await update(ref(db, `projects/${projectId}`), updates);
+    } catch (error) {
+      console.error("Error al restaurar ODT:", error);
       throw error;
     }
   };
@@ -1009,7 +1042,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <ODTContext.Provider value={{ 
-      user, projects, clients, users, notifications, loading, login, logout, 
+      user, projects, deletedProjects, clients, users, notifications, loading, login, logout, 
       isAlertsOpen, setIsAlertsOpen,
       updateProjectStatus: async () => {}, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
       processQA, 
@@ -1039,7 +1072,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       addProject, 
       addTraceabilityComment,
-      removeProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, getRoadmapStages,
+      removeProject, restoreProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, getRoadmapStages,
       updateQAChecklist,
       addMaterial, updateMaterialStatus, updateProjectDate, updateProjectId, markNotificationAsRead, clearNotifications
     }}>

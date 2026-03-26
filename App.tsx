@@ -387,8 +387,17 @@ const AppContent: React.FC = () => {
 
     if (view === 'project-detail') {
       const id = params?.id || selectedProjectId;
-      const project = projects.find(p => p.id === id);
+      if (!id) return <div className="p-20 text-center font-black uppercase text-slate-400">ID de ODT no proporcionado</div>;
+      
+      const project = projects.find(p => p.id.trim().toUpperCase() === id.trim().toUpperCase());
       if (project) return <ProjectDetail project={project} onBack={() => navigate(-1)} />;
+      
+      // Also check in deleted projects if user is Admin
+      if (user?.role === UserRole.Admin) {
+        const deletedProject = deletedProjects.find(p => p.id.trim().toUpperCase() === id.trim().toUpperCase());
+        if (deletedProject) return <ProjectDetail project={deletedProject} onBack={() => navigate(-1)} />;
+      }
+      
       return <div className="p-20 text-center font-black uppercase text-slate-400">Proyecto no encontrado</div>;
     }
 
@@ -404,11 +413,93 @@ const AppContent: React.FC = () => {
       case 'auditor': return <VirtualAuditor />;
       case 'commercial-intelligence': return <CommercialIntelligence />;
       case 'medical-manual': return <MedicalUserManual />;
+      case 'deleted-projects': return <DeletedProjectsView onViewProject={onViewProject} />;
       default: return <AdminDashboard />;
     }
   };
 
   return <AppRouter renderView={renderView} onRouteReset={() => setSelectedProjectId(null)} />;
+};
+
+const DeletedProjectsView: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProject }) => {
+  const { deletedProjects, restoreProject, user } = useODT();
+  
+  if (user?.role !== UserRole.Admin) {
+    return <div className="p-20 text-center font-black uppercase text-rose-600">Acceso Denegado</div>;
+  }
+
+  return (
+    <div className="space-y-8 animate-fadeIn">
+      <header>
+        <h1 className="text-3xl font-black text-slate-900 tracking-tight">ODTs Eliminadas</h1>
+        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1 italic">Historial de purga y recuperación</p>
+      </header>
+
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-black tracking-widest">
+            <tr>
+              <th className="px-6 py-5">ODT ID</th>
+              <th className="px-6 py-5">Cliente / Proyecto</th>
+              <th className="px-6 py-5">Eliminado Por</th>
+              <th className="px-6 py-5">Fecha / Motivo</th>
+              <th className="px-6 py-5 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {deletedProjects.map(p => (
+              <tr key={p.id} className="hover:bg-slate-50/80 transition-all">
+                <td className="px-6 py-4 font-mono font-black text-slate-400 text-xs line-through">
+                  {p.id}
+                </td>
+                <td className="px-6 py-4">
+                  <div className="font-black text-slate-800 uppercase text-xs">{p.empresa}</div>
+                  <div className="text-[10px] text-slate-400 font-bold">{p.producto}</div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="font-bold text-slate-700 text-xs uppercase">{p.deletedByName || 'N/A'}</div>
+                  <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">ID: {p.deletedBy}</div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="font-bold text-slate-600 text-xs">
+                    {p.deletedAt ? new Date(p.deletedAt).toLocaleString() : 'N/A'}
+                  </div>
+                  <div className="text-[10px] text-rose-500 font-medium italic mt-1">
+                    "{p.deletionReason || 'Sin motivo especificado'}"
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-right space-x-2">
+                  <button 
+                    onClick={() => onViewProject(p.id)}
+                    className="p-2 hover:bg-blue-50 text-blue-600 rounded-xl transition-all"
+                    title="Ver Detalles"
+                  >
+                    <Icons.Project className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (window.confirm(`¿Seguro que deseas restaurar la ODT ${p.id}?`)) {
+                        restoreProject(p.id);
+                      }
+                    }}
+                    className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-xl transition-all"
+                    title="Restaurar ODT"
+                  >
+                    <Icons.Plus className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {deletedProjects.length === 0 && (
+          <div className="p-20 text-center text-slate-300 font-black uppercase tracking-[0.3em] text-xs">
+            No hay ODTs eliminadas en el historial
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 const App: React.FC = () => (

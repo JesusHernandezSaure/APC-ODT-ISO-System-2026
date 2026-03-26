@@ -215,6 +215,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       return;
     }
 
+    const reason = window.prompt("Por favor, ingresa el motivo de la eliminación (Obligatorio):");
+    if (!reason || !reason.trim()) {
+      setDialog({ type: 'alert', message: "Debe proporcionar un motivo para eliminar la ODT." });
+      return;
+    }
+
     setDialog({
       type: 'confirm',
       message: `¿ESTÁ SEGURO DE ELIMINAR LA ODT ${project.id}?`,
@@ -229,7 +235,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               onConfirm: async () => {
                 setDialog(null);
                 try {
-                  await removeProject(project.id);
+                  await removeProject(project.id, reason);
                   setDialog({ type: 'alert', message: `ELIMINACIÓN COMPLETA: La ODT ${project.id} ha sido borrada permanentemente.`, onConfirm: onBack });
                 } catch (error) {
                   console.error("Fallo al eliminar ODT:", error);
@@ -337,6 +343,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   return (
     <div className="flex flex-col lg:flex-row gap-8 animate-fadeIn pb-20">
       <div className="flex-1 space-y-6">
+      <div className={`bg-white rounded-3xl border ${project.deleted ? 'border-rose-200 bg-rose-50/30' : 'border-slate-100'} shadow-2xl overflow-hidden mb-8 transition-all`}>
+        {project.deleted && (
+          <div className="bg-rose-600 text-white px-6 py-2 text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-between">
+            <span>Esta ODT ha sido eliminada</span>
+            <span>Eliminado por: {project.deletedByName} ({project.deletedAt ? new Date(project.deletedAt).toLocaleString() : 'N/A'})</span>
+          </div>
+        )}
         <header className="flex flex-col md:flex-row items-start justify-between bg-apc-green p-8 rounded-[2.5rem] text-white shadow-2xl shadow-apc-green/20 mb-8 gap-6">
           <div className="flex items-start gap-6 flex-1 w-full">
             <button 
@@ -473,6 +486,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             </div>
           </div>
         </header>
+      </div>
 
         {/* Alertas de Escalación */}
         {project.status === 'Correcciones' && project.assignedExecutives?.includes(user?.id || '') && (

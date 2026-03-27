@@ -379,7 +379,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                         try {
                           await updateProjectId(project.id, newId.trim());
                           setIsEditingId(false);
-                          navigate(`/project/${newId.trim()}`, { replace: true });
+                          navigate(`/project/${encodeURIComponent(newId.trim())}`, { replace: true });
                         } catch (e: unknown) {
                           const message = e instanceof Error ? e.message : "Error al actualizar el ID.";
                           setDialog({ type: 'alert', message });

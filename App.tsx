@@ -22,7 +22,7 @@ import ErrorBoundary from './ErrorBoundary';
 import { CalendarView } from './CalendarView';
 
 const AppContent: React.FC = () => {
-  const { projects, users, loading } = useODT();
+  const { projects, deletedProjects, user, users, loading } = useODT();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -382,7 +382,7 @@ const AppContent: React.FC = () => {
 
   const renderView = (view: ViewState | string, params?: { id?: string }) => {
     const onViewProject = (id: string) => {
-      navigate(`/project/${id}`);
+      navigate(`/project/${encodeURIComponent(id)}`);
     };
 
     if (view === 'project-detail') {

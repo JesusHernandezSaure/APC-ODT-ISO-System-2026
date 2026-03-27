@@ -9,7 +9,9 @@ export enum UserRole {
   QA_Opera = 'QA_Opera',
   Medico_Lider = 'Medico_Lider',
   Medico_Opera = 'Medico_Opera',
-  Finanzas = 'Finanzas'
+  Finanzas = 'Finanzas',
+  Administracion_Lider = 'Administracion_Lider',
+  Administracion_Opera = 'Administracion_Opera'
 }
 
 export interface User {

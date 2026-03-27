@@ -177,6 +177,9 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                 const currentAssignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(currentAssignmentArea));
                 const isAssignedToMe = currentAssignment?.usuarioId === user?.id;
 
+                const hasClientLink = p.presentation_link || p.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
+                const displayStatus = (p.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : p.status;
+
                 return (
                   <tr key={p.id} className={`hover:bg-slate-50/80 transition-colors ${isAssignedToMe ? 'bg-apc-green/5' : ''}`}>
                     <td className="px-6 py-4">
@@ -192,8 +195,8 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${p.status === 'QA' ? 'bg-apc-pink/10 text-apc-pink shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
-                        {p.status}
+                      <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-tighter ${displayStatus === 'En revisión con cliente' ? 'bg-purple-600 text-white shadow-sm' : p.status === 'QA' ? 'bg-apc-pink/10 text-apc-pink shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
+                        {displayStatus}
                       </span>
                       <div className="text-[7px] font-black text-slate-400 mt-0.5 uppercase">{p.etapa_actual}</div>
                       {p.category === 'PARRILLA RRSS' && p.materiales && p.materiales.length > 0 && (

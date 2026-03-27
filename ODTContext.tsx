@@ -653,15 +653,27 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       presentation_link: link,
       presentation_version: version,
       presentation_date: new Date().toISOString(),
+      status: 'En revisión con cliente',
       updatedAt: new Date().toISOString(),
-      comentarios: [{
-        id: `pres-${Date.now()}`,
-        authorId: user.id,
-        authorName: user.name,
-        text: `PRESENTACIÓN PARA CLIENTE: Versión ${version} subida. Link: ${link}`,
-        createdAt: new Date().toISOString(),
-        isSystemEvent: true
-      }, ...(project.comentarios || [])]
+      comentarios: [
+        {
+          id: `status-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `Cambio de Status: En revisión con cliente`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        },
+        {
+          id: `pres-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `PRESENTACIÓN PARA CLIENTE: Versión ${version} subida. Link: ${link}`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }, 
+        ...(project.comentarios || [])
+      ]
     };
     await update(ref(db, `projects/${projectId}`), updates);
   };

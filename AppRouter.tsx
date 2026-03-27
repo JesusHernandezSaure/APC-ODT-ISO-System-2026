@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useODT } from './ODTContext';
-import { UserRole, ViewState } from './types';
+import { UserRole, ViewState, User } from './types';
 import * as Constants from './constants';
 import { ref, set } from "firebase/database";
 import { db } from './firebase';
@@ -114,6 +114,19 @@ export const AppRouter: React.FC<{
     if (onRouteReset) onRouteReset();
   }, [location.pathname, onRouteReset]);
 
+  const canAccessAdminDashboard = (u: User | null) => {
+    if (!u) return false;
+    const allowedRoles = [
+      UserRole.Admin, 
+      UserRole.Cuentas_Lider, 
+      UserRole.Finanzas, 
+      UserRole.Administracion_Lider, 
+      UserRole.Administracion_Opera
+    ];
+    const allowedDepts = ['Administración', 'Finanzas'];
+    return allowedRoles.includes(u.role) || allowedDepts.includes(u.department);
+  };
+
   useEffect(() => {
     if (!user) {
       if (location.pathname !== '/login') {
@@ -122,15 +135,27 @@ export const AppRouter: React.FC<{
       return;
     }
 
+    // Protection for Admin Dashboard
+    const isAdminDashboard = location.pathname === '/dashboard' || location.pathname === '/dashboard-adm';
+    if (isAdminDashboard && !canAccessAdminDashboard(user)) {
+      const isLeader = user.role === UserRole.Lider_Operativo || user.role === UserRole.Medico_Lider || user.role === UserRole.Correccion;
+      navigate(isLeader ? '/leader-dashboard' : '/my-projects', { replace: true });
+      return;
+    }
+
     // Redirect to initial view if at root or login
     if (location.pathname === '/' || location.pathname === '/login') {
-      let nextPath = '/dashboard';
-      if (user.role === UserRole.Correccion || user.role === UserRole.Medico_Lider) nextPath = '/leader-dashboard';
-      else if (user.role === UserRole.QA_Opera) nextPath = '/qa-box';
-      else if (user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas) nextPath = '/finances';
-      else if (user.role === UserRole.Lider_Operativo) nextPath = '/leader-dashboard';
-      else if (user.role === UserRole.Operativo) nextPath = '/my-projects';
-      else if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Cuentas_Lider) nextPath = '/clients';
+      let nextPath = '/my-projects';
+      
+      if (canAccessAdminDashboard(user)) {
+        nextPath = '/dashboard-adm';
+      } else if (user.role === UserRole.Correccion || user.role === UserRole.Medico_Lider || user.role === UserRole.Lider_Operativo) {
+        nextPath = '/leader-dashboard';
+      } else if (user.role === UserRole.QA_Opera) {
+        nextPath = '/qa-box';
+      } else if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Cuentas_Lider) {
+        nextPath = '/clients';
+      }
       
       navigate(nextPath);
     }
@@ -193,7 +218,7 @@ export const AppRouter: React.FC<{
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 relative z-10">
-          {canSee([UserRole.Admin, UserRole.Cuentas_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={isModuleActive('/dashboard')} isCollapsed={isCollapsed} onClick={() => { navigate('/dashboard'); setIsMobileMenuOpen(false); }} />}
+          {canAccessAdminDashboard(user) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={isModuleActive('/dashboard-adm')} isCollapsed={isCollapsed} onClick={() => { navigate('/dashboard-adm'); setIsMobileMenuOpen(false); }} />}
           {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={isModuleActive('/leader-dashboard')} isCollapsed={isCollapsed} onClick={() => { navigate('/leader-dashboard'); setIsMobileMenuOpen(false); }} />}
           {canSee([UserRole.Cuentas_Opera, UserRole.Cuentas_Lider, UserRole.Admin]) && <SidebarItem icon={<Icons.Clients />} label="Clientes / Archivo" active={isModuleActive('/clients')} isCollapsed={isCollapsed} onClick={() => { navigate('/clients'); setIsMobileMenuOpen(false); }} />}
           {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.Admin, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={isModuleActive('/my-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/my-projects'); setIsMobileMenuOpen(false); }} />}
@@ -248,7 +273,7 @@ export const AppRouter: React.FC<{
         <div className={`fixed inset-0 pointer-events-none opacity-[0.02] bg-striped-green ${isCollapsed ? 'md:ml-20' : 'md:ml-64'} transition-all duration-300`}></div>
         <div className="relative z-10 pt-16 md:pt-0">
           <Routes>
-            <Route path="/dashboard" element={renderView('dashboard')} />
+            <Route path="/dashboard-adm" element={renderView('dashboard')} />
             <Route path="/leader-dashboard" element={renderView('leader-dashboard')} />
             <Route path="/clients" element={renderView('clients')} />
             <Route path="/my-projects" element={renderView('my-projects')} />
@@ -261,7 +286,7 @@ export const AppRouter: React.FC<{
             <Route path="/medical-manual" element={renderView('medical-manual')} />
             <Route path="/deleted-projects" element={renderView('deleted-projects')} />
             <Route path="/project/:id" element={<ProjectDetailRoute renderView={renderView} />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/my-projects" replace />} />
           </Routes>
         </div>
         <HelpChatbot />

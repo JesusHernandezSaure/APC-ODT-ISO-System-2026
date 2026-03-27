@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { UserRole, ViewState } from './types';
+import { useNavigate, Navigate } from 'react-router-dom';
+import { UserRole, ViewState, User } from './types';
 import { Icons } from './constants';
 import { ODTProvider, useODT } from './ODTContext';
 import { AppRouter } from './AppRouter';
@@ -25,6 +25,19 @@ const AppContent: React.FC = () => {
   const { projects, deletedProjects, user, users, loading } = useODT();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const canAccessAdminDashboard = (u: User | null) => {
+    if (!u) return false;
+    const allowedRoles = [
+      UserRole.Admin, 
+      UserRole.Cuentas_Lider, 
+      UserRole.Finanzas, 
+      UserRole.Administracion_Lider, 
+      UserRole.Administracion_Opera
+    ];
+    const allowedDepts = ['Administración', 'Finanzas'];
+    return allowedRoles.includes(u.role) || allowedDepts.includes(u.department);
+  };
 
   if (!db || loading) {
     return (
@@ -137,41 +150,51 @@ const AppContent: React.FC = () => {
 
   const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProject }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const { user, projects, users, checkSLA, getRoadmapStages } = useODT();
-    const isGlobalLead = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
-    
+    const { user, projects, users, checkSLA } = useODT();
+    const isGlobalLead = user?.role === UserRole.Admin;
+
     const myProjects = projects?.filter(p => {
-      if (!isGlobalLead) {
-        const isDirectlyAssigned = p.asignaciones?.some(a => a.usuarioId === user?.id);
-        const isAreaLead = user?.role === UserRole.Lider_Operativo || user?.role === UserRole.Medico_Lider;
-        const isOwner = p.assignedExecutives?.includes(user?.id || '');
-        
-        const stages = getRoadmapStages(p);
-        const currentStage = stages[p.current_stage_index || 0] || '';
-        const userDept = normalizeString(user?.department || '');
-        const normalizedCurrentStage = normalizeString(currentStage);
-        
-        let isMyCurrentStage = false;
-        if (userDept === 'qa' || user?.role === UserRole.Correccion) {
-          isMyCurrentStage = normalizedCurrentStage.includes('qa');
-        } else if (userDept === 'cuentas') {
-          isMyCurrentStage = normalizedCurrentStage.includes('cuentas');
-        } else {
-          isMyCurrentStage = normalizedCurrentStage === userDept;
+      // 1. Admin sees everything
+      if (user?.role === UserRole.Admin) {
+        if (searchTerm) {
+          const search = normalizeString(searchTerm);
+          return (
+            normalizeString(p.id).includes(search) ||
+            normalizeString(p.empresa).includes(search) ||
+            normalizeString(p.marca).includes(search) ||
+            normalizeString(p.producto).includes(search) ||
+            normalizeString(p.status).includes(search)
+          );
         }
-
-        const isRelevant = isDirectlyAssigned || (isAreaLead && isMyCurrentStage) || (isOwner && isMyCurrentStage);
-
-        // Medical staff should NOT see QA tasks in their production inbox
-        const isMedical = user?.role === UserRole.Medico_Lider || user?.role === UserRole.Medico_Opera;
-        if (isMedical) {
-          const inQAStage = normalizedCurrentStage.includes('qa') || p.status === 'QA';
-          if (inQAStage) return false;
-        }
-
-        if (!isRelevant) return false;
+        return true;
       }
 
+      const userDept = normalizeString(user?.department || '');
+      const projectStage = normalizeString(p.etapa_actual || '');
+      const userRole = user?.role;
+
+      // 2. Cuentas logic: assigned or owner
+      if (userDept === 'cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera) {
+        const isAssigned = p.asignaciones?.some(a => a.usuarioId === user?.id);
+        const isOwner = p.assignedExecutives?.includes(user?.id || '');
+        
+        if (!(isAssigned || isOwner)) return false;
+      } else {
+        // 3. Other operational areas logic
+        const isMyTurn = projectStage === userDept;
+        const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
+        
+        // QA specific logic
+        if (userDept === 'qa' || userRole === UserRole.QA_Opera || userRole === UserRole.Correccion) {
+          const inQA = projectStage.includes('qa') || p.status === 'QA';
+          if (!inQA) return false;
+        } else {
+          // Strict turn-based visibility
+          if (!isMyTurn && !isCorrections) return false;
+        }
+      }
+
+      // Apply search filter
       if (searchTerm) {
         const search = normalizeString(searchTerm);
         return (
@@ -179,8 +202,6 @@ const AppContent: React.FC = () => {
           normalizeString(p.empresa).includes(search) ||
           normalizeString(p.marca).includes(search) ||
           normalizeString(p.producto).includes(search) ||
-          normalizeString(p.category || '').includes(search) ||
-          normalizeString(p.subCategory || '').includes(search) ||
           normalizeString(p.status).includes(search)
         );
       }
@@ -402,7 +423,9 @@ const AppContent: React.FC = () => {
     }
 
     switch (view) {
-      case 'dashboard': return <AdminDashboard />;
+      case 'dashboard': 
+        if (canAccessAdminDashboard(user)) return <AdminDashboard />;
+        return <Navigate to="/my-projects" replace />;
       case 'leader-dashboard': return <LeaderDashboard onViewProject={onViewProject} />;
       case 'my-projects': return <MyInbox onViewProject={onViewProject} />;
       case 'clients': return <ClientsView onViewProject={onViewProject} />;

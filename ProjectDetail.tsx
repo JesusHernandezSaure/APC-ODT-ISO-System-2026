@@ -77,6 +77,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     return calculateRoadmap(project.areas_seleccionadas || []);
   }, [project.areas_seleccionadas]);
 
+  const hasClientLink = project.presentation_link || project.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
+  const displayStatus = (project.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : project.status;
+
   const priority = getPriorityInfo(project.fecha_entrega);
 
   const currentIdx = project.current_stage_index || 0;
@@ -442,9 +445,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             <div className={`px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-[0.15em] shadow-xl ${
               project.status === 'Finalizado' ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 
               project.status === 'QA' ? 'bg-amber-500 text-white shadow-amber-500/20' : 
+              displayStatus === 'En revisión con cliente' ? 'bg-purple-600 text-white shadow-purple-500/20' :
               'bg-white text-apc-green shadow-black/5'
             }`}>
-              {project.status}
+              {displayStatus}
             </div>
 
             {/* Fecha de Entrega */}

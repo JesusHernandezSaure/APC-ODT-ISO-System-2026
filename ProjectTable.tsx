@@ -37,6 +37,9 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
           let responsible = users?.find((u: User) => u.id === assignment?.usuarioId);
           let isLeaderFallback = false;
 
+          const hasClientLink = p.presentation_link || p.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
+          const displayStatus = (p.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : p.status;
+
           if (!responsible) {
             // Si no hay asignación directa, el responsable es el Líder del área actual
             responsible = users?.find((u: User) => 
@@ -58,6 +61,7 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
           else if (correctionCount === 2) statusColorClass = 'bg-orange-100 text-orange-700 shadow-sm border border-orange-200';
           else if (correctionCount === 1) statusColorClass = 'bg-amber-100 text-amber-700 shadow-sm border border-amber-200';
           else if (p.status === 'QA') statusColorClass = 'bg-amber-100 text-amber-700 shadow-sm';
+          else if (displayStatus === 'En revisión con cliente') statusColorClass = 'bg-purple-600 text-white shadow-sm';
 
           const isFirstRejection = p.contadorCorrecciones === 1;
           const isSecondRejection = (p.contadorCorrecciones || 0) >= 2;
@@ -115,8 +119,8 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
                  )}
               </td>
               <td className="px-6 py-4">
-                <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tighter ${statusColorClass} ${p.status === 'Correcciones' ? (isFirstRejection ? 'text-red-700 font-bold border border-red-200 bg-red-50' : 'bg-rose-600 text-white') : ''}`}>
-                  {isRejected ? 'RECHAZADA' : isApproved ? 'APROBADA' : p?.status}
+                <span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-tighter ${statusColorClass} ${displayStatus === 'Correcciones' ? (isFirstRejection ? 'text-red-700 font-bold border border-red-200 bg-red-50' : 'bg-rose-600 text-white') : ''}`}>
+                  {isRejected ? 'RECHAZADA' : isApproved ? 'APROBADA' : displayStatus}
                 </span>
                 <div className="text-[7px] font-black text-slate-400 mt-0.5 truncate max-w-[80px] uppercase">{(p?.etapa_actual || p?.etapaActual)}</div>
                 {p?.category === 'PARRILLA RRSS' && p?.materiales && p.materiales.length > 0 && (

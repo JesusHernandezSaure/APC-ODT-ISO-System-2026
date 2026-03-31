@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { UserRole, ViewState, User } from './types';
 import { Icons } from './constants';
@@ -150,84 +150,111 @@ const AppContent: React.FC = () => {
 
   const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProject }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [filterStatus, setFilterStatus] = useState('Todas');
+    const [filterCategory, setFilterCategory] = useState('Todas');
+    const [filterSubCategory, setFilterSubCategory] = useState('Todas');
+    const [filterResponsible, setFilterResponsible] = useState('Todas');
+
     const { user, projects, users, checkSLA } = useODT();
     const isGlobalLead = user?.role === UserRole.Admin;
 
-    const myProjects = projects?.filter(p => {
-      const userRole = user?.role as UserRole;
-      const userId = user?.id;
-      const userDept = normalizeString(user?.department || '');
-      const projectStage = normalizeString(p.etapa_actual || '');
+    const isLeader = user && [
+      UserRole.Cuentas_Lider,
+      UserRole.Lider_Operativo,
+      UserRole.Correccion,
+      UserRole.Medico_Lider,
+      UserRole.Administracion_Lider,
+      UserRole.Admin
+    ].includes(user.role);
 
-      // 1. Admin sees everything
-      if (userRole === UserRole.Admin) {
-        if (searchTerm) {
-          const search = normalizeString(searchTerm);
-          return (
-            normalizeString(p.id).includes(search) ||
-            normalizeString(p.empresa).includes(search) ||
-            normalizeString(p.marca).includes(search) ||
-            normalizeString(p.producto).includes(search) ||
-            normalizeString(p.status).includes(search)
+    const categories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.category).filter(Boolean))], [projects]);
+    const subCategories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.subCategory).filter(Boolean))], [projects]);
+    const assignableUsers = useMemo(() => ['Todas', ...new Set(users.map(u => u.name))], [users]);
+
+    const myProjects = useMemo(() => {
+      let result = projects?.filter(p => {
+        const userRole = user?.role as UserRole;
+        const userId = user?.id;
+        const userDept = normalizeString(user?.department || '');
+        const projectStage = normalizeString(p.etapa_actual || '');
+
+        // 1. Admin sees everything
+        if (userRole === UserRole.Admin) return true;
+
+        // Define Leader roles
+        const isLeaderRole = [
+          UserRole.Cuentas_Lider,
+          UserRole.Lider_Operativo,
+          UserRole.Correccion,
+          UserRole.Medico_Lider,
+          UserRole.Administracion_Lider
+        ].includes(userRole);
+
+        // 2. RBAC Logic: Leaders vs Operatives
+        if (isLeaderRole) {
+          if (userDept === 'cuentas') {
+            const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
+            const isOwner = p.assignedExecutives?.includes(userId || '');
+            const isMyTurn = projectStage.includes('cuentas');
+            if (!(isAssigned || isOwner || isMyTurn)) return false;
+          } else if (userDept === 'qa') {
+            const inQA = projectStage.includes('qa') || p.status === 'QA';
+            if (!inQA) return false;
+          } else {
+            const isMyTurn = projectStage === userDept;
+            const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
+            if (!isMyTurn && !isCorrections) return false;
+          }
+        } else {
+          let isInMyTurn = false;
+          if (userDept === 'cuentas') {
+            isInMyTurn = projectStage.includes('cuentas');
+          } else if (userDept === 'qa') {
+            isInMyTurn = projectStage.includes('qa') || p.status === 'QA';
+          } else {
+            isInMyTurn = projectStage === userDept || (p.status === 'Correcciones' && projectStage === userDept);
+          }
+          if (!isInMyTurn) return false;
+          const isAssigned = p.asignaciones?.some(a => 
+            a.usuarioId === userId && normalizeString(a.area) === userDept
           );
+          const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
+          if (!isAssigned && !isOwner) return false;
         }
         return true;
+      }) || [];
+
+      // Apply Filters
+      if (filterStatus !== 'Todas') {
+        if (filterStatus === 'Vencidas') {
+          result = result.filter(p => p.fecha_entrega && new Date(p.fecha_entrega) < new Date());
+        } else if (filterStatus === 'En Corrección') {
+          result = result.filter(p => p.status === 'Correcciones');
+        } else if (filterStatus === 'Reincidentes') {
+          result = result.filter(p => (p.contadorCorrecciones || 0) >= 2);
+        }
       }
 
-      // Define Leader roles
-      const isLeader = [
-        UserRole.Cuentas_Lider,
-        UserRole.Lider_Operativo,
-        UserRole.Correccion,
-        UserRole.Medico_Lider,
-        UserRole.Administracion_Lider
-      ].includes(userRole);
-
-      // 2. RBAC Logic: Leaders vs Operatives
-      if (isLeader) {
-        // Leaders see everything in their department's turn
-        // OR they keep their previous visibility (for Cuentas)
-        if (userDept === 'cuentas') {
-          const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
-          const isOwner = p.assignedExecutives?.includes(userId || '');
-          const isMyTurn = projectStage.includes('cuentas');
-          
-          if (!(isAssigned || isOwner || isMyTurn)) return false;
-        } else if (userDept === 'qa') {
-          const inQA = projectStage.includes('qa') || p.status === 'QA';
-          if (!inQA) return false;
-        } else {
-          const isMyTurn = projectStage === userDept;
-          const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
-          if (!isMyTurn && !isCorrections) return false;
-        }
-      } else {
-        // Operatives: Double filter (Department Turn AND Explicit Assignment)
-        let isInMyTurn = false;
-        if (userDept === 'cuentas') {
-          isInMyTurn = projectStage.includes('cuentas');
-        } else if (userDept === 'qa') {
-          isInMyTurn = projectStage.includes('qa') || p.status === 'QA';
-        } else {
-          isInMyTurn = projectStage === userDept || (p.status === 'Correcciones' && projectStage === userDept);
-        }
-
-        if (!isInMyTurn) return false;
-
-        const isAssigned = p.asignaciones?.some(a => 
-          a.usuarioId === userId && normalizeString(a.area) === userDept
-        );
-        
-        // Special case for Cuentas operatives: can also be an owner (assigned executive)
-        const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
-        
-        if (!isAssigned && !isOwner) return false;
+      if (filterCategory !== 'Todas') {
+        result = result.filter(p => p.category === filterCategory);
       }
 
-      // 3. Apply search filter
+      if (filterSubCategory !== 'Todas') {
+        result = result.filter(p => p.subCategory === filterSubCategory);
+      }
+
+      if (filterResponsible !== 'Todas') {
+        result = result.filter(p => {
+          const assignedUser = users.find(u => u.name === filterResponsible);
+          return p.asignaciones?.some(a => a.usuarioId === assignedUser?.id) || 
+                 p.assignedExecutives?.includes(assignedUser?.id || '');
+        });
+      }
+
+      // Apply Search
       if (searchTerm) {
         const search = normalizeString(searchTerm);
-        return (
+        result = result.filter(p => 
           normalizeString(p.id).includes(search) ||
           normalizeString(p.empresa).includes(search) ||
           normalizeString(p.marca).includes(search) ||
@@ -235,9 +262,14 @@ const AppContent: React.FC = () => {
           normalizeString(p.status).includes(search)
         );
       }
-      
-      return true;
-    }) || [];
+
+      // Apply Default Sorting (fechaEntrega earliest/overdue first)
+      return result.sort((a, b) => {
+        const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
+        const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
+        return dateA - dateB;
+      });
+    }, [projects, user, searchTerm, filterStatus, filterCategory, filterSubCategory, filterResponsible, users]);
     
     return (
       <div className="space-y-6 max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
@@ -260,10 +292,65 @@ const AppContent: React.FC = () => {
             />
           </div>
         </header>
+
+        {/* Filter Bar */}
+        <div className="flex flex-wrap gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Estado/Prioridad</label>
+            <select 
+              value={filterStatus} 
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+            >
+              <option value="Todas">Todas</option>
+              <option value="Vencidas">Vencidas</option>
+              <option value="En Corrección">En Corrección</option>
+              <option value="Reincidentes">Reincidentes</option>
+            </select>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoría</label>
+            <select 
+              value={filterCategory} 
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+            >
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Subcategoría</label>
+            <select 
+              value={filterSubCategory} 
+              onChange={(e) => setFilterSubCategory(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+            >
+              {subCategories.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          {isLeader && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Responsable</label>
+              <select 
+                value={filterResponsible} 
+                onChange={(e) => setFilterResponsible(e.target.value)}
+                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+              >
+                {assignableUsers.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+
         <div className="bg-white p-6 rounded-xl border-2 border-dashed border-slate-200">
            {myProjects.length === 0 ? (
              <p className="text-slate-400 italic text-center py-10">
-               {searchTerm ? 'No se encontraron resultados para su búsqueda.' : 'No tiene tareas asignadas en este momento.'}
+               {searchTerm || filterStatus !== 'Todas' || filterCategory !== 'Todas' || filterSubCategory !== 'Todas' || filterResponsible !== 'Todas' 
+                 ? 'No se encontraron resultados para los filtros aplicados.' 
+                 : 'No tiene tareas asignadas en este momento.'}
              </p>
            ) : (
              <ProjectTable projects={myProjects} onView={onViewProject} checkSLA={checkSLA} users={users} />
@@ -274,33 +361,79 @@ const AppContent: React.FC = () => {
   };
 
   const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProject }) => {
+    const [filterStatus, setFilterStatus] = useState('Todas');
+    const [filterCategory, setFilterCategory] = useState('Todas');
+    const [filterSubCategory, setFilterSubCategory] = useState('Todas');
+    const [filterResponsible, setFilterResponsible] = useState('Todas');
+
     const { user, projects, users, checkSLA } = useODT();
-    const qaProjects = projects?.filter(p => {
-      const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
-      const inQAStage = currentE.includes('REVISIÓN QA') || p.status === 'QA';
-      
-      if (!inQAStage) return false;
 
-      const userRole = user?.role as UserRole;
-      const userId = user?.id;
+    const categories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.category).filter(Boolean))], [projects]);
+    const subCategories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.subCategory).filter(Boolean))], [projects]);
+    const assignableUsers = useMemo(() => ['Todas', ...new Set(users.map(u => u.name))], [users]);
 
-      // Admin, QA Leader, Medical Leader and Accounts Leader see all pending QA
-      if (userRole === UserRole.Correccion || userRole === UserRole.Admin || userRole === UserRole.Medico_Lider || userRole === UserRole.Cuentas_Lider) return true;
+    const qaProjects = useMemo(() => {
+      let result = projects?.filter(p => {
+        const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
+        const inQAStage = currentE.includes('REVISIÓN QA') || p.status === 'QA';
+        
+        if (!inQAStage) return false;
 
-      // Cuentas Operatives see only ODTs they own or are assigned to
-      if (userRole === UserRole.Cuentas_Opera) {
-        const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
-        const isOwner = p.assignedExecutives?.includes(userId || '');
-        return isAssigned || isOwner;
+        const userRole = user?.role as UserRole;
+        const userId = user?.id;
+
+        // Admin, QA Leader, Medical Leader and Accounts Leader see all pending QA
+        if (userRole === UserRole.Correccion || userRole === UserRole.Admin || userRole === UserRole.Medico_Lider || userRole === UserRole.Cuentas_Lider) return true;
+
+        // Cuentas Operatives see only ODTs they own or are assigned to
+        if (userRole === UserRole.Cuentas_Opera) {
+          const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
+          const isOwner = p.assignedExecutives?.includes(userId || '');
+          return isAssigned || isOwner;
+        }
+
+        // QA Operatives and Medical Operatives see only assigned tasks in QA area
+        if (userRole === UserRole.QA_Opera || userRole === UserRole.Medico_Opera) {
+          return p.asignaciones?.some(a => a.usuarioId === userId && normalizeString(a.area) === 'qa');
+        }
+
+        return false;
+      }) || [];
+
+      // Apply Filters
+      if (filterStatus !== 'Todas') {
+        if (filterStatus === 'Vencidas') {
+          result = result.filter(p => p.fecha_entrega && new Date(p.fecha_entrega) < new Date());
+        } else if (filterStatus === 'En Corrección') {
+          result = result.filter(p => p.status === 'Correcciones');
+        } else if (filterStatus === 'Reincidentes') {
+          result = result.filter(p => (p.contadorCorrecciones || 0) >= 2);
+        }
       }
 
-      // QA Operatives and Medical Operatives see only assigned tasks in QA area
-      if (userRole === UserRole.QA_Opera || userRole === UserRole.Medico_Opera) {
-        return p.asignaciones?.some(a => a.usuarioId === userId && normalizeString(a.area) === 'qa');
+      if (filterCategory !== 'Todas') {
+        result = result.filter(p => p.category === filterCategory);
       }
 
-      return false;
-    }) || [];
+      if (filterSubCategory !== 'Todas') {
+        result = result.filter(p => p.subCategory === filterSubCategory);
+      }
+
+      if (filterResponsible !== 'Todas') {
+        result = result.filter(p => {
+          const assignedUser = users.find(u => u.name === filterResponsible);
+          return p.asignaciones?.some(a => a.usuarioId === assignedUser?.id) || 
+                 p.assignedExecutives?.includes(assignedUser?.id || '');
+        });
+      }
+
+      // Apply Default Sorting (fechaEntrega earliest/overdue first)
+      return result.sort((a, b) => {
+        const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
+        const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
+        return dateA - dateB;
+      });
+    }, [projects, user, filterStatus, filterCategory, filterSubCategory, filterResponsible, users]);
 
     const isGlobalQA = user?.role === UserRole.Correccion || user?.role === UserRole.Admin || user?.role === UserRole.Medico_Lider;
 
@@ -312,13 +445,64 @@ const AppContent: React.FC = () => {
             {isGlobalQA ? 'Supervisión Global de Calidad (Todas las Revisiones)' : 'Tareas de Revisión Delegadas a su Perfil'}
           </p>
         </header>
+
+        {/* Filter Bar */}
+        <div className="flex flex-wrap gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Estado/Prioridad</label>
+            <select 
+              value={filterStatus} 
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+            >
+              <option value="Todas">Todas</option>
+              <option value="Vencidas">Vencidas</option>
+              <option value="En Corrección">En Corrección</option>
+              <option value="Reincidentes">Reincidentes</option>
+            </select>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoría</label>
+            <select 
+              value={filterCategory} 
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+            >
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Subcategoría</label>
+            <select 
+              value={filterSubCategory} 
+              onChange={(e) => setFilterSubCategory(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+            >
+              {subCategories.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Responsable</label>
+            <select 
+              value={filterResponsible} 
+              onChange={(e) => setFilterResponsible(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:ring-2 focus:ring-apc-pink transition-all"
+            >
+              {assignableUsers.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+        </div>
+
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl">
            {qaProjects.length === 0 ? (
              <div className="text-center py-20">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
                    <Icons.Ai />
                 </div>
-                <p className="text-slate-400 italic font-medium">No hay revisiones técnicas pendientes en este momento.</p>
+                <p className="text-slate-400 italic font-medium">No se encontraron revisiones con los filtros aplicados.</p>
              </div>
            ) : (
              <ProjectTable 

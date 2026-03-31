@@ -154,8 +154,13 @@ const AppContent: React.FC = () => {
     const isGlobalLead = user?.role === UserRole.Admin;
 
     const myProjects = projects?.filter(p => {
+      const userRole = user?.role as UserRole;
+      const userId = user?.id;
+      const userDept = normalizeString(user?.department || '');
+      const projectStage = normalizeString(p.etapa_actual || '');
+
       // 1. Admin sees everything
-      if (user?.role === UserRole.Admin) {
+      if (userRole === UserRole.Admin) {
         if (searchTerm) {
           const search = normalizeString(searchTerm);
           return (
@@ -169,32 +174,57 @@ const AppContent: React.FC = () => {
         return true;
       }
 
-      const userDept = normalizeString(user?.department || '');
-      const projectStage = normalizeString(p.etapa_actual || '');
-      const userRole = user?.role;
+      // Define Leader roles
+      const isLeader = [
+        UserRole.Cuentas_Lider,
+        UserRole.Lider_Operativo,
+        UserRole.Correccion,
+        UserRole.Medico_Lider,
+        UserRole.Administracion_Lider
+      ].includes(userRole);
 
-      // 2. Cuentas logic: assigned or owner
-      if (userDept === 'cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera) {
-        const isAssigned = p.asignaciones?.some(a => a.usuarioId === user?.id);
-        const isOwner = p.assignedExecutives?.includes(user?.id || '');
-        
-        if (!(isAssigned || isOwner)) return false;
-      } else {
-        // 3. Other operational areas logic
-        const isMyTurn = projectStage === userDept;
-        const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
-        
-        // QA specific logic
-        if (userDept === 'qa' || userRole === UserRole.QA_Opera || userRole === UserRole.Correccion) {
+      // 2. RBAC Logic: Leaders vs Operatives
+      if (isLeader) {
+        // Leaders see everything in their department's turn
+        // OR they keep their previous visibility (for Cuentas)
+        if (userDept === 'cuentas') {
+          const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
+          const isOwner = p.assignedExecutives?.includes(userId || '');
+          const isMyTurn = projectStage.includes('cuentas');
+          
+          if (!(isAssigned || isOwner || isMyTurn)) return false;
+        } else if (userDept === 'qa') {
           const inQA = projectStage.includes('qa') || p.status === 'QA';
           if (!inQA) return false;
         } else {
-          // Strict turn-based visibility
+          const isMyTurn = projectStage === userDept;
+          const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
           if (!isMyTurn && !isCorrections) return false;
         }
+      } else {
+        // Operatives: Double filter (Department Turn AND Explicit Assignment)
+        let isInMyTurn = false;
+        if (userDept === 'cuentas') {
+          isInMyTurn = projectStage.includes('cuentas');
+        } else if (userDept === 'qa') {
+          isInMyTurn = projectStage.includes('qa') || p.status === 'QA';
+        } else {
+          isInMyTurn = projectStage === userDept || (p.status === 'Correcciones' && projectStage === userDept);
+        }
+
+        if (!isInMyTurn) return false;
+
+        const isAssigned = p.asignaciones?.some(a => 
+          a.usuarioId === userId && normalizeString(a.area) === userDept
+        );
+        
+        // Special case for Cuentas operatives: can also be an owner (assigned executive)
+        const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
+        
+        if (!isAssigned && !isOwner) return false;
       }
 
-      // Apply search filter
+      // 3. Apply search filter
       if (searchTerm) {
         const search = normalizeString(searchTerm);
         return (
@@ -210,8 +240,8 @@ const AppContent: React.FC = () => {
     }) || [];
     
     return (
-      <div className="space-y-6">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <div className="space-y-6 max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 sticky top-0 bg-white z-20 py-4 border-b border-slate-100 -mx-2 px-2">
           <div>
             <h1 className="text-3xl font-black">Bandeja Operativa</h1>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">
@@ -251,12 +281,22 @@ const AppContent: React.FC = () => {
       
       if (!inQAStage) return false;
 
-      // Admin, QA Leader, Medical Leader and Accounts see all pending QA
-      if (user?.role === UserRole.Correccion || user?.role === UserRole.Admin || user?.role === UserRole.Medico_Lider || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera) return true;
+      const userRole = user?.role as UserRole;
+      const userId = user?.id;
+
+      // Admin, QA Leader, Medical Leader and Accounts Leader see all pending QA
+      if (userRole === UserRole.Correccion || userRole === UserRole.Admin || userRole === UserRole.Medico_Lider || userRole === UserRole.Cuentas_Lider) return true;
+
+      // Cuentas Operatives see only ODTs they own or are assigned to
+      if (userRole === UserRole.Cuentas_Opera) {
+        const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
+        const isOwner = p.assignedExecutives?.includes(userId || '');
+        return isAssigned || isOwner;
+      }
 
       // QA Operatives and Medical Operatives see only assigned tasks in QA area
-      if (user?.role === UserRole.QA_Opera || user?.role === UserRole.Medico_Opera) {
-        return p.asignaciones?.some(a => a.usuarioId === user?.id && a.area === 'QA');
+      if (userRole === UserRole.QA_Opera || userRole === UserRole.Medico_Opera) {
+        return p.asignaciones?.some(a => a.usuarioId === userId && normalizeString(a.area) === 'qa');
       }
 
       return false;
@@ -265,8 +305,8 @@ const AppContent: React.FC = () => {
     const isGlobalQA = user?.role === UserRole.Correccion || user?.role === UserRole.Admin || user?.role === UserRole.Medico_Lider;
 
     return (
-      <div className="space-y-6 animate-fadeIn">
-        <header>
+      <div className="space-y-6 animate-fadeIn max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
+        <header className="sticky top-0 bg-white z-20 py-4 border-b border-slate-100 -mx-2 px-2">
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Caja de QA</h1>
           <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1 italic">
             {isGlobalQA ? 'Supervisión Global de Calidad (Todas las Revisiones)' : 'Tareas de Revisión Delegadas a su Perfil'}

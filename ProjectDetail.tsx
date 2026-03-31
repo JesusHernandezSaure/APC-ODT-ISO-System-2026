@@ -71,6 +71,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [newMatNombre, setNewMatNombre] = useState('');
   const [newMatTipo, setNewMatTipo] = useState('Imagen');
   const [newMatRed, setNewMatRed] = useState('Facebook');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
   const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm', message: string, onConfirm?: () => void } | null>(null);
 
   const roadmapStages = useMemo(() => {
@@ -217,13 +219,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       setDialog({ type: 'alert', message: "Acceso denegado: No tiene permisos para eliminar registros." });
       return;
     }
+    setDeleteReason('');
+    setShowDeleteModal(true);
+  };
 
-    const reason = window.prompt("Por favor, ingresa el motivo de la eliminación (Obligatorio):");
-    if (!reason || !reason.trim()) {
+  const confirmDeleteODT = async () => {
+    if (!deleteReason.trim()) {
       setDialog({ type: 'alert', message: "Debe proporcionar un motivo para eliminar la ODT." });
       return;
     }
 
+    setShowDeleteModal(false);
     setDialog({
       type: 'confirm',
       message: `¿ESTÁ SEGURO DE ELIMINAR LA ODT ${project.id}?`,
@@ -238,7 +244,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               onConfirm: async () => {
                 setDialog(null);
                 try {
-                  await removeProject(project.id, reason);
+                  await removeProject(project.id, deleteReason);
                   setDialog({ type: 'alert', message: `ELIMINACIÓN COMPLETA: La ODT ${project.id} ha sido borrada permanentemente.`, onConfirm: onBack });
                 } catch (error) {
                   console.error("Fallo al eliminar ODT:", error);
@@ -1313,6 +1319,45 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   className="flex-1 py-3 bg-apc-green text-white font-black text-[10px] rounded-xl hover:bg-apc-green/80 uppercase tracking-widest transition-all shadow-lg shadow-apc-green/20"
                 >
                   Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-100 relative z-[1110]">
+            <h3 className="text-xl font-black text-slate-800 mb-6 uppercase tracking-tight flex items-center gap-3">
+              <Icons.Trash className="text-rose-600" /> Eliminar ODT
+            </h3>
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500 font-medium">
+                Para proceder con la eliminación de la ODT <span className="font-black text-slate-800">{project.id}</span>, es obligatorio proporcionar un motivo válido para el registro de auditoría.
+              </p>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Motivo de Eliminación</label>
+                <textarea 
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="Ej: ODT duplicada, error en requerimientos, cancelación de cliente..."
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 font-bold text-slate-700 text-sm h-32 resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button 
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-500 font-black text-[10px] rounded-xl hover:bg-slate-200 uppercase tracking-widest transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDeleteODT}
+                  disabled={!deleteReason.trim()}
+                  className="flex-1 py-3 bg-rose-600 text-white font-black text-[10px] rounded-xl hover:bg-rose-700 uppercase tracking-widest transition-all shadow-lg shadow-rose-600/20 disabled:opacity-50"
+                >
+                  Continuar
                 </button>
               </div>
             </div>

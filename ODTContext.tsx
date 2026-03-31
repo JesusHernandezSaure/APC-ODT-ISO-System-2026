@@ -352,7 +352,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const link = linkMatch ? linkMatch[1] : (project.last_delivery_link || "");
     
     let newStatus: Project['status'] = 'En Proceso';
-    if (newIndex >= stages.length - 1) newStatus = 'Finalizado';
+    if (proximaArea === GLOBAL_STAGES.BILLING) newStatus = 'Pendiente de pago';
+    else if (newIndex >= stages.length - 1) newStatus = 'Finalizado';
     else if (proximaArea.toUpperCase().includes('REVISIÓN QA')) newStatus = 'QA';
 
     const updates: Record<string, unknown> = {
@@ -700,7 +701,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         current_stage_index: nextIndex,
         etapa_actual: nextArea,
         etapaActual: nextArea,
-        status: nextIndex >= stages.length - 1 ? 'Finalizado' : 'En Proceso',
+        status: nextArea === GLOBAL_STAGES.BILLING ? 'Pendiente de pago' : (nextIndex >= stages.length - 1 ? 'Finalizado' : 'En Proceso'),
         comentarios: [{
           id: `cf-${Date.now()}`,
           authorId: user.id,
@@ -885,9 +886,11 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
       isSystemEvent: true
     };
+    const isFinalized = facturado && (project?.pagado || false);
     await update(ref(db, `projects/${projectId}`), { 
       facturado, 
       justificacion_no_facturado: justification || "", 
+      status: isFinalized ? 'Finalizado' : (project?.status || 'Pendiente de pago'),
       updatedAt: new Date().toISOString(),
       comentarios: [newComment, ...(project?.comentarios || [])]
     });
@@ -904,8 +907,10 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
       isSystemEvent: true
     };
+    const isFinalized = pagado && (project?.facturado || false);
     await update(ref(db, `projects/${projectId}`), { 
       pagado, 
+      status: isFinalized ? 'Finalizado' : (project?.status || 'Pendiente de pago'),
       updatedAt: new Date().toISOString(),
       comentarios: [newComment, ...(project?.comentarios || [])]
     });

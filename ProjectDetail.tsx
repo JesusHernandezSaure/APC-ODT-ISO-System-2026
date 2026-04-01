@@ -7,7 +7,7 @@ import { useODT } from './ODTContext';
 import { Project, UserRole, Material } from './types';
 import { Icons } from './constants';
 import { auditProjectISO } from './services/geminiService';
-import { calculateRoadmap, GLOBAL_STAGES, getPriorityInfo } from './workflowConfig';
+import { calculateRoadmap, GLOBAL_STAGES, getPriorityInfo, OPERATIVE_AREAS } from './workflowConfig';
 
 interface ProjectDetailProps {
   project: Project;
@@ -32,6 +32,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     delegateProject,
     updateProjectDate,
     updateProjectId,
+    updateProjectAreas,
+    fastTrackProject,
     reassignProjectAndFolder
   } = useODT();
   const navigate = useNavigate();
@@ -53,6 +55,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [showDelegationModal, setShowDelegationModal] = useState(false);
   const [showReassignModal, setShowReassignModal] = useState(false);
+  const [showAreasModal, setShowAreasModal] = useState(false);
+  const [showFastTrackModal, setShowFastTrackModal] = useState(false);
+  const [fastTrackJustification, setFastTrackJustification] = useState('');
+  const [fastTrackDestination, setFastTrackDestination] = useState('');
+  const [selectedAreasForEdit, setSelectedAreasForEdit] = useState<string[]>(project.areas_seleccionadas || []);
   const [selectedExecutives, setSelectedExecutives] = useState<string[]>(project.assignedExecutives || []);
   const [selectedDelegateId, setSelectedDelegateId] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -92,6 +99,15 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   
   const isInitialStage = currentIdx === 0;
   const isProductionStage = currentIdx > 0 && currentIdx < roadmapStages.length - 2 && !isQAStage;
+
+  const fastTrackOptions = useMemo(() => {
+    return roadmapStages.filter(stage => 
+      stage !== currentStageName && 
+      !stage.includes('REVISIÓN QA') && 
+      stage !== GLOBAL_STAGES.START &&
+      stage !== GLOBAL_STAGES.BILLING
+    );
+  }, [roadmapStages, currentStageName]);
 
   const canOperate = useMemo(() => {
     if (!user) return false;
@@ -844,6 +860,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             >
               {getButtonLabel()}
             </button>
+
+            {user?.role === UserRole.Medico_Lider && currentStageName === 'Médico' && (
+              <button 
+                onClick={() => setShowFastTrackModal(true)}
+                className="w-full mt-2 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 border-amber-400 text-amber-600 hover:bg-amber-50 transition-all"
+              >
+                Aprobar y Saltar QA (Fast Track)
+              </button>
+            )}
+
             {!canOperate && (
               <p className="text-[9px] text-rose-500 font-bold mt-3 text-center uppercase tracking-tighter italic">
                 Solo el responsable de {currentStageName} puede avanzar.
@@ -1062,7 +1088,21 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         )}
 
         <div className="bg-white p-6 rounded-3xl border shadow-sm overflow-hidden">
-          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Ruta de Calidad APC</h3>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ruta de Calidad APC</h3>
+            {isAccountOwnerOrLeader && (
+              <button 
+                onClick={() => {
+                  setSelectedAreasForEdit(project.areas_seleccionadas || []);
+                  setShowAreasModal(true);
+                }}
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-all text-apc-pink"
+                title="Editar Áreas"
+              >
+                <Icons.Edit className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <div className="relative space-y-8">
             {(!roadmapStages || roadmapStages.length === 0) ? (
               <p className="text-center text-slate-400 text-xs italic py-4">No hay áreas asignadas para esta ruta.</p>
@@ -1394,6 +1434,145 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 className={`flex-1 py-3 text-white font-black text-xs rounded-xl transition-all uppercase tracking-widest shadow-lg ${dialog.type === 'confirm' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}
               >
                 {dialog.type === 'confirm' ? 'Confirmar' : 'Entendido'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showAreasModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Editar Áreas Operativas</h2>
+              <button onClick={() => setShowAreasModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <Icons.X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-4">
+              Selecciona las áreas que participarán en esta ODT:
+            </p>
+
+            <div className="grid grid-cols-1 gap-2 mb-8 max-h-[300px] overflow-y-auto pr-2">
+              {OPERATIVE_AREAS.map(area => (
+                <label key={area} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer transition-all">
+                  <input 
+                    type="checkbox"
+                    checked={selectedAreasForEdit.includes(area)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedAreasForEdit([...selectedAreasForEdit, area]);
+                      } else {
+                        setSelectedAreasForEdit(selectedAreasForEdit.filter(a => a !== area));
+                      }
+                    }}
+                    className="w-5 h-5 rounded border-slate-300 text-apc-pink focus:ring-apc-pink"
+                  />
+                  <span className="text-xs font-bold text-slate-700 uppercase">{area}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowAreasModal(false)}
+                className="flex-1 py-3 bg-slate-100 text-slate-600 font-black text-[10px] rounded-xl hover:bg-slate-200 uppercase tracking-widest transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={async () => {
+                  if (selectedAreasForEdit.length === 0) {
+                    setDialog({ type: 'alert', message: "Debe seleccionar al menos un área operativa." });
+                    return;
+                  }
+                  try {
+                    await updateProjectAreas(project.id, selectedAreasForEdit);
+                    setShowAreasModal(false);
+                    setDialog({ type: 'alert', message: "Áreas actualizadas exitosamente." });
+                  } catch {
+                    setDialog({ type: 'alert', message: "Error al actualizar las áreas." });
+                  }
+                }}
+                className="flex-1 py-3 bg-apc-green text-white font-black text-[10px] rounded-xl hover:bg-apc-green/80 uppercase tracking-widest transition-all shadow-lg shadow-apc-green/20"
+              >
+                Guardar Cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFastTrackModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                <Icons.Ai className="text-amber-500" /> Fast Track (Salto de QA)
+              </h2>
+              <button onClick={() => setShowFastTrackModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <Icons.X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 mb-6">
+              <p className="text-[10px] text-amber-700 font-bold leading-relaxed">
+                <span className="block mb-1 uppercase tracking-widest">⚠️ Protocolo ISO 9001:2015</span>
+                Esta acción permite saltar la revisión de QA obligatoria. Se requiere una justificación técnica válida para la auditoría de calidad.
+              </p>
+            </div>
+
+            <div className="space-y-4 mb-8">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Justificación del Salto</label>
+                <textarea 
+                  required
+                  placeholder="Explica por qué no se requiere revisión de QA para este avance..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs outline-none font-medium h-24 focus:border-amber-400 transition-colors"
+                  value={fastTrackJustification}
+                  onChange={(e) => setFastTrackJustification(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">¿A qué área enviar ahora?</label>
+                <select 
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none font-bold focus:border-amber-400 transition-colors"
+                  value={fastTrackDestination}
+                  onChange={(e) => setFastTrackDestination(e.target.value)}
+                >
+                  <option value="">Selecciona destino...</option>
+                  {fastTrackOptions.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowFastTrackModal(false)}
+                className="flex-1 py-3 bg-slate-100 text-slate-600 font-black text-[10px] rounded-xl hover:bg-slate-200 uppercase tracking-widest transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                disabled={!fastTrackJustification || !fastTrackDestination}
+                onClick={async () => {
+                  try {
+                    await fastTrackProject(project.id, fastTrackDestination, fastTrackJustification);
+                    setShowFastTrackModal(false);
+                    setFastTrackJustification('');
+                    setFastTrackDestination('');
+                    setDialog({ type: 'alert', message: "Fast Track procesado exitosamente." });
+                  } catch {
+                    setDialog({ type: 'alert', message: "Error al procesar el Fast Track." });
+                  }
+                }}
+                className="flex-1 py-3 bg-amber-500 text-white font-black text-[10px] rounded-xl hover:bg-amber-600 uppercase tracking-widest transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:grayscale"
+              >
+                Autorizar Salto
               </button>
             </div>
           </div>

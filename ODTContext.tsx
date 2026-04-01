@@ -1057,6 +1057,112 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await update(ref(db), updates);
   };
 
+  const updateProjectAreas = async (projectId: string, newAreas: string[]) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const newRoadmap = calculateRoadmap(newAreas);
+    const currentStage = project.etapa_actual || project.etapaActual;
+    
+    // Find the new index for the current stage in the new roadmap
+    let newIndex = newRoadmap.indexOf(currentStage);
+    
+    // If for some reason the current stage is not in the new roadmap (shouldn't happen with append), 
+    // we default to the first stage or keep the index if within bounds
+    if (newIndex === -1) {
+      newIndex = project.current_stage_index;
+    }
+
+    const currentAsignaciones = project.asignaciones || [];
+    const newAsignaciones = [...currentAsignaciones];
+    
+    newAreas.forEach(area => {
+      if (!newAsignaciones.find(a => a.area === area)) {
+        newAsignaciones.push({
+          area,
+          usuarioId: '',
+          status: 'pendiente'
+        });
+      }
+    });
+
+    const newComment = {
+      id: `areas-change-${Date.now()}`,
+      authorId: user.id,
+      authorName: user.name,
+      text: `Áreas operativas actualizadas. Nuevas áreas: ${newAreas.join(', ')}`,
+      createdAt: new Date().toISOString(),
+      isSystemEvent: true
+    };
+
+    const updates: Record<string, unknown> = {
+      areas_seleccionadas: newAreas,
+      current_stage_index: newIndex,
+      asignaciones: newAsignaciones,
+      updatedAt: new Date().toISOString(),
+      comentarios: [newComment, ...(project.comentarios || [])]
+    };
+
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
+  const fastTrackProject = async (projectId: string, destinationStage: string, justification: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const stages = getRoadmapStages(project);
+    const targetIndex = stages.indexOf(destinationStage);
+    if (targetIndex === -1) return;
+
+    const isClosing = destinationStage === GLOBAL_STAGES.CLOSING;
+    const newStatus = isClosing ? 'En revisión con cliente' : 'En Proceso';
+
+    const updates: Record<string, unknown> = {
+      current_stage_index: targetIndex,
+      etapa_actual: destinationStage,
+      etapaActual: destinationStage,
+      status: newStatus,
+      updatedAt: new Date().toISOString(),
+      comentarios: [{
+        id: `ft-${Date.now()}`,
+        authorId: user.id,
+        authorName: user.name,
+        text: `FAST TRACK (Salto de QA) autorizado por ${user.name}. Destino: ${destinationStage}. Justificación: ${justification}`,
+        createdAt: new Date().toISOString(),
+        isSystemEvent: true
+      }, ...(project.comentarios || [])]
+    };
+
+    if (isClosing) {
+      updates.accounts_approval_ok = false;
+    }
+
+    await update(ref(db, `projects/${projectId}`), updates);
+
+    // Notification for the next area leader
+    const nextLeader = users.find(u => {
+      const userDept = normalizeString(u.department || '');
+      const normalizedNextArea = normalizeString(destinationStage);
+      
+      if (normalizedNextArea.includes('cuentas')) {
+        return userDept === 'cuentas';
+      }
+      return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider);
+    });
+
+    if (nextLeader) {
+      await createNotification({
+        userId: nextLeader.id,
+        title: '⚡ FAST TRACK: ODT EN TU ÁREA',
+        message: `La ODT ${projectId} ha saltado QA y ha sido enviada a tu área (${destinationStage}).`,
+        type: 'new_odt',
+        projectId: projectId
+      });
+    }
+  };
+
   return (
     <ODTContext.Provider value={{ 
       user, projects, deletedProjects, clients, users, notifications, loading, login, logout, 
@@ -1091,7 +1197,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addTraceabilityComment,
       removeProject, restoreProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, getRoadmapStages,
       updateQAChecklist,
-      addMaterial, updateMaterialStatus, updateProjectDate, updateProjectId, markNotificationAsRead, clearNotifications
+      addMaterial, updateMaterialStatus, updateProjectDate, updateProjectId, updateProjectAreas, fastTrackProject, markNotificationAsRead, clearNotifications
     }}>
       {children}
     </ODTContext.Provider>

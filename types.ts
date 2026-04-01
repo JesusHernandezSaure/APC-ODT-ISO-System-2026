@@ -189,6 +189,8 @@ export interface ODTContextType {
   updateMaterialStatus: (projectId: string, materialId: string, newStatus: Material['estado']) => Promise<void>;
   updateProjectDate: (projectId: string, newDate: string) => Promise<void>;
   updateProjectId: (oldId: string, newId: string) => Promise<void>;
+  updateProjectAreas: (projectId: string, newAreas: string[]) => Promise<void>;
+  fastTrackProject: (projectId: string, destinationStage: string, justification: string) => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   clearNotifications: () => Promise<void>;
 }

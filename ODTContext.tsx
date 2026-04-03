@@ -825,7 +825,39 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     await update(ref(db, `projects/${projectId}`), updates);
 
-    // Notificación a quien dejó el último material
+    // Detección de menciones (@usuario)
+    const mentionRegex = /@([\w.]+)/g;
+    const matches = text.match(mentionRegex);
+    
+    if (matches) {
+      const mentionedUserIds = new Set<string>();
+      for (const match of matches) {
+        const username = match.substring(1);
+        let mentionedUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+        
+        // Manejo de punto final gramatical (ej: @jesus.apc.)
+        if (!mentionedUser && username.endsWith('.')) {
+          const trimmedUsername = username.slice(0, -1);
+          mentionedUser = users.find(u => u.username.toLowerCase() === trimmedUsername.toLowerCase());
+        }
+
+        if (mentionedUser && mentionedUser.id !== user.id) {
+          mentionedUserIds.add(mentionedUser.id);
+        }
+      }
+
+      for (const userId of mentionedUserIds) {
+        await createNotification({
+          userId: userId,
+          title: '💬 TE HAN MENCIONADO',
+          message: `${user.name} te ha mencionado en la ODT ${projectId}`,
+          type: 'system',
+          projectId: projectId
+        });
+      }
+    }
+
+    // Notificación a quien dejó el último material (si no hay menciones o adicionalmente)
     const lastDelivery = project.delivery_history?.[0];
     if (lastDelivery && lastDelivery.authorId !== user.id) {
       await createNotification({
@@ -1129,7 +1161,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: `ft-${Date.now()}`,
         authorId: user.id,
         authorName: user.name,
-        text: `FAST TRACK (Salto de QA) autorizado por ${user.name}. Destino: ${destinationStage}. Justificación: ${justification}`,
+        text: `AJUSTE DE RUTA (Omisión de QA) ejecutado por ${user.name}. Destino: ${destinationStage}. Motivo: ${justification}`,
         createdAt: new Date().toISOString(),
         isSystemEvent: true
       }, ...(project.comentarios || [])]

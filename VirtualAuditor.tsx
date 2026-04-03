@@ -6,6 +6,9 @@ import { Icons } from './constants';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+import { fixOklchForHtml2Canvas } from './reportUtils';
 
 const VirtualAuditor: React.FC = () => {
   const { projects, users, user: currentUser } = useODT();
@@ -182,6 +185,37 @@ const VirtualAuditor: React.FC = () => {
     }
   };
 
+  const downloadPDF = async () => {
+    const element = document.getElementById('ai-audit-report');
+    if (!element) {
+      console.error("Element #ai-audit-report not found");
+      return;
+    }
+    
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          fixOklchForHtml2Canvas(clonedDoc);
+        }
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Auditoria_ISO9001_APC_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fadeIn">
       <header className="flex justify-between items-center bg-slate-900 p-8 rounded-3xl text-white shadow-2xl relative overflow-hidden">
@@ -253,14 +287,27 @@ const VirtualAuditor: React.FC = () => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="bg-white p-8 rounded-3xl border shadow-xl prose prose-slate max-w-none"
+                className="bg-white rounded-3xl border shadow-xl overflow-hidden"
               >
-                <div className="flex items-center justify-between mb-8 pb-4 border-b">
-                  <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight m-0">Informe de Auditoría AI</h2>
-                  <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full uppercase tracking-widest">Generado en Tiempo Real</span>
+                <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Informe de Auditoría AI</h3>
+                  <button 
+                    onClick={downloadPDF}
+                    className="bg-slate-900 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center gap-2"
+                  >
+                    <Icons.Plus className="w-3 h-3" /> Descargar Reporte PDF
+                  </button>
                 </div>
-                <div className="markdown-body">
-                  <ReactMarkdown>{analysis}</ReactMarkdown>
+                <div id="ai-audit-report" className="p-10 prose prose-slate max-w-none">
+                  <div className="mb-10 pb-6 border-b border-slate-100">
+                    <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight m-0">Auditoría de Calidad ISO 9001</h2>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                      Generado por Auditor Virtual APC • {new Date().toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="markdown-body">
+                    <ReactMarkdown>{analysis}</ReactMarkdown>
+                  </div>
                 </div>
               </motion.div>
             ) : (

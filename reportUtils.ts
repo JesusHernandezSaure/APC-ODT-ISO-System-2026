@@ -338,3 +338,40 @@ export const downloadCSV = (data: Record<string, string | number>[], filename: s
   link.click();
   document.body.removeChild(link);
 };
+
+/**
+ * Fixes oklch color functions in a cloned document for html2canvas compatibility.
+ * Tailwind v4 uses oklch by default, which html2canvas cannot parse.
+ */
+export const fixOklchForHtml2Canvas = (clonedDoc: Document) => {
+  const elements = Array.from(clonedDoc.getElementsByTagName('*')) as HTMLElement[];
+  elements.forEach(el => {
+    try {
+      const computedStyle = window.getComputedStyle(el);
+      const props = ['color', 'backgroundColor', 'borderColor', 'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor', 'fill', 'stroke'];
+      
+      props.forEach(prop => {
+        const value = computedStyle[prop as keyof CSSStyleDeclaration] as string;
+        if (value && value.includes('oklch')) {
+          el.style[prop as keyof CSSStyleDeclaration] = prop.toLowerCase().includes('background') ? '#ffffff' : '#000000';
+        } else if (value) {
+          el.style[prop as keyof CSSStyleDeclaration] = value;
+        }
+      });
+    } catch {
+      // Skip elements that can't be processed
+    }
+  });
+
+  // Sanitize stylesheets to prevent parser errors
+  const styleTags = Array.from(clonedDoc.getElementsByTagName('style'));
+  styleTags.forEach(style => {
+    try {
+      if (style.innerHTML.includes('oklch')) {
+        style.innerHTML = style.innerHTML.replace(/oklch\([^)]+\)/g, '#000000');
+      }
+    } catch {
+      // Skip styles that can't be processed
+    }
+  });
+};

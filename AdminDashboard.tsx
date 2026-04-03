@@ -6,8 +6,10 @@ import * as Constants from './constants';
 import { OPERATIVE_AREAS } from './workflowConfig';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
-import { generateMasterReport, downloadMasterCSV } from './reportUtils';
+import { generateMasterReport, downloadMasterCSV, fixOklchForHtml2Canvas } from './reportUtils';
 import { motion, AnimatePresence } from 'motion/react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const AdminDashboard: React.FC = () => {
   const { Icons } = Constants;
@@ -110,13 +112,19 @@ const AdminDashboard: React.FC = () => {
     }, 0);
     const avgDelivery = finished.length > 0 ? (totalDays / finished.length).toFixed(1) : 'N/A';
     
-    // Internal Rework (QA)
-    const totalInternalRejections = filteredProjects.reduce((acc, p) => acc + (p.internal_qa_rejection_count || p.contadorCorrecciones || 0), 0);
-    const avgInternalRework = total > 0 ? (totalInternalRejections / total).toFixed(1) : '0';
+    // ODTs in QA stage (Normal process)
+    const odtsInQA = filteredProjects.filter(p => p.status?.includes('QA')).length;
+    
+    // Total Real Rework (Actual rejections from history)
+    const totalRealRework = filteredProjects.reduce((acc, p) => {
+      const rejectionsInHistory = p.comentarios?.filter(c => 
+        c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")
+      ).length || 0;
+      return acc + rejectionsInHistory;
+    }, 0);
     
     // Client Corrections
-    const totalClientRejections = filteredProjects.reduce((acc, p) => acc + (p.client_rejection_count || 0), 0);
-    const avgClientCorrections = total > 0 ? (totalClientRejections / total).toFixed(1) : '0';
+    const totalClientCorrections = filteredProjects.reduce((acc, p) => acc + (p.client_rejection_count || 0), 0);
     
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -137,8 +145,9 @@ const AdminDashboard: React.FC = () => {
       total,
       activeCount: activeProjects.length,
       avgDelivery,
-      avgInternalRework,
-      avgClientCorrections,
+      odtsInQA,
+      totalRealRework,
+      totalClientCorrections,
       onTimeCount,
       delayedCount
     };
@@ -184,6 +193,37 @@ const AdminDashboard: React.FC = () => {
       setAnalysis("Error al conectar con la IA.");
     } finally {
       setLoadingAI(false);
+    }
+  };
+
+  const downloadPDF = async () => {
+    const element = document.getElementById('ai-analysis-content');
+    if (!element) {
+      console.error("Element #ai-analysis-content not found");
+      return;
+    }
+    
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          fixOklchForHtml2Canvas(clonedDoc);
+        }
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Reporte_Estrategico_APC_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
     }
   };
 
@@ -277,7 +317,7 @@ const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Operational Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-lg flex flex-col justify-between">
           <div className="flex justify-between items-center mb-4">
             <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
@@ -307,8 +347,19 @@ const AdminDashboard: React.FC = () => {
             </div>
             <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded">QA</span>
           </div>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Retrabajo Interno (QA)</p>
-          <p className="text-3xl font-black text-slate-900">{operationalMetrics.avgInternalRework}</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ODTs en Revisión QA</p>
+          <p className="text-3xl font-black text-slate-900">{operationalMetrics.odtsInQA}</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-lg flex flex-col justify-between">
+          <div className="flex justify-between items-center mb-4">
+            <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600">
+              <Icons.Alert />
+            </div>
+            <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-2 py-1 rounded">RETRABAJO</span>
+          </div>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total de Rechazos Internos</p>
+          <p className="text-3xl font-black text-slate-900">{operationalMetrics.totalRealRework}</p>
         </div>
 
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-lg flex flex-col justify-between">
@@ -319,7 +370,7 @@ const AdminDashboard: React.FC = () => {
             <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-1 rounded">CLIENTE</span>
           </div>
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Correcciones de Cliente</p>
-          <p className="text-3xl font-black text-slate-900">{operationalMetrics.avgClientCorrections}</p>
+          <p className="text-3xl font-black text-slate-900">{operationalMetrics.totalClientCorrections}</p>
         </div>
 
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-lg flex flex-col justify-between">
@@ -437,14 +488,28 @@ const AdminDashboard: React.FC = () => {
           >
             <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
               <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Análisis Estratégico de Inteligencia</h3>
-              <button 
-                onClick={() => setAnalysis(null)}
-                className="text-slate-400 hover:text-slate-900 transition-all"
-              >
-                <Icons.X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={downloadPDF}
+                  className="bg-slate-900 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center gap-2"
+                >
+                  <Icons.Plus className="w-3 h-3" /> Descargar Reporte PDF
+                </button>
+                <button 
+                  onClick={() => setAnalysis(null)}
+                  className="text-slate-400 hover:text-slate-900 transition-all"
+                >
+                  <Icons.X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <div className="p-10 prose prose-slate max-w-none">
+            <div id="ai-analysis-content" className="p-10 prose prose-slate max-w-none">
+              <div className="mb-10 pb-6 border-b border-slate-100">
+                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight m-0">Reporte Estratégico Ejecutivo</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                  Generado por APC Intelligence AI • {new Date().toLocaleDateString()}
+                </p>
+              </div>
               <div className="markdown-body">
                 <ReactMarkdown>{analysis}</ReactMarkdown>
               </div>

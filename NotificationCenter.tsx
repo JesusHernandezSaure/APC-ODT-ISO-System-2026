@@ -1,17 +1,28 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { useODT } from './ODTContext';
 import { Icons } from './constants';
+import { Notification } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 
 const NotificationCenter: React.FC = () => {
   const { user, notifications, markNotificationAsRead, clearNotifications, isAlertsOpen, setIsAlertsOpen } = useODT();
+  const navigate = useNavigate();
 
   if (!user) return null;
 
   const userNotifs = notifications.filter(n => n.userId === user.id);
   const unreadCount = userNotifs.filter(n => !n.read).length;
+
+  const handleNotificationClick = (n: Notification) => {
+    markNotificationAsRead(n.id);
+    if (n.projectId) {
+      navigate(`/project/${n.projectId}`);
+      setIsAlertsOpen(false);
+    }
+  };
 
   const dropdown = (
     <AnimatePresence>
@@ -49,7 +60,7 @@ const NotificationCenter: React.FC = () => {
                   {userNotifs.map(n => (
                     <div 
                       key={n.id} 
-                      onClick={() => markNotificationAsRead(n.id)}
+                      onClick={() => handleNotificationClick(n)}
                       className={`p-4 hover:bg-slate-50 transition-colors cursor-pointer relative ${!n.read ? 'bg-blue-50/30' : ''}`}
                     >
                       {!n.read && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />}
@@ -65,10 +76,19 @@ const NotificationCenter: React.FC = () => {
                         </span>
                       </div>
                       <h4 className="text-xs font-black text-slate-900 mb-1">{n.title}</h4>
-                      <p className="text-[10px] text-slate-500 leading-relaxed">{n.message}</p>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        {n.message.split(new RegExp(`(${n.projectId})`, 'g')).map((part, i) => 
+                          part === n.projectId ? (
+                            <span key={i} className="text-blue-600 font-black underline decoration-blue-200">
+                              {part}
+                            </span>
+                          ) : part
+                        )}
+                      </p>
                       {n.projectId && (
-                        <div className="mt-2 text-[9px] font-black text-blue-600">
-                          PROYECTO: {n.projectId}
+                        <div className="mt-2 flex items-center gap-1.5 text-[9px] font-black text-blue-600 bg-blue-50 w-fit px-2 py-1 rounded-lg border border-blue-100">
+                          <Icons.Project className="w-3 h-3" />
+                          VER ODT: {n.projectId}
                         </div>
                       )}
                     </div>

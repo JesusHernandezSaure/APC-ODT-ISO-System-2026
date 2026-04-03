@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { useODT } from './ODTContext';
-import { Project, UserRole, Material } from './types';
+import { Project, UserRole, Material, User } from './types';
 import { Icons } from './constants';
 import { auditProjectISO } from './services/geminiService';
 import { calculateRoadmap, GLOBAL_STAGES, getPriorityInfo, OPERATIVE_AREAS } from './workflowConfig';
@@ -82,6 +82,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [deleteReason, setDeleteReason] = useState('');
   const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm', message: string, onConfirm?: () => void } | null>(null);
 
+  // Menciones State
+  const [mentionSearch, setMentionSearch] = useState('');
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(-1);
+
   const roadmapStages = useMemo(() => {
     return calculateRoadmap(project.areas_seleccionadas || []);
   }, [project.areas_seleccionadas]);
@@ -144,9 +149,47 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     return false;
   }, [user, project.areas_seleccionadas]);
 
+  const filteredMentionUsers = useMemo(() => {
+    if (!mentionSearch) return [];
+    return users.filter(u => 
+      u.username.toLowerCase().includes(mentionSearch.toLowerCase()) ||
+      u.name.toLowerCase().includes(mentionSearch.toLowerCase())
+    ).slice(0, 5);
+  }, [users, mentionSearch]);
+
+  const handleMentionSelect = (selectedUser: User) => {
+    const before = traceabilityComment.substring(0, mentionIndex);
+    const after = traceabilityComment.substring(mentionIndex + mentionSearch.length + 1);
+    setTraceabilityComment(`${before}@${selectedUser.username} ${after}`);
+    setShowMentionDropdown(false);
+    setMentionSearch('');
+  };
+
+  const onCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setTraceabilityComment(value);
+
+    const cursorPosition = e.target.selectionStart;
+    const textBeforeCursor = value.substring(0, cursorPosition);
+    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
+
+    if (lastAtSymbol !== -1 && (lastAtSymbol === 0 || textBeforeCursor[lastAtSymbol - 1] === ' ')) {
+      const query = textBeforeCursor.substring(lastAtSymbol + 1);
+      if (!query.includes(' ')) {
+        setMentionSearch(query);
+        setMentionIndex(lastAtSymbol);
+        setShowMentionDropdown(true);
+        return;
+      }
+    }
+    setShowMentionDropdown(false);
+  };
+
   const renderTextWithLinks = (text: string) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const mentionRegex = /(@[\w.]+)/g;
     const parts = text.split(urlRegex);
+    
     return parts.map((part, i) => {
       if (part.match(urlRegex)) {
         return (
@@ -161,7 +204,37 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </a>
         );
       }
-      return part;
+      
+      const subParts = part.split(mentionRegex);
+      return subParts.map((subPart, j) => {
+        if (subPart.startsWith('@')) {
+          let username = subPart.substring(1);
+          let mentionedUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+          let trailingDot = '';
+          
+          // Manejo de punto final gramatical (ej: @jesus.apc.)
+          if (!mentionedUser && username.endsWith('.')) {
+            const trimmed = username.slice(0, -1);
+            mentionedUser = users.find(u => u.username.toLowerCase() === trimmed.toLowerCase());
+            if (mentionedUser) {
+              username = trimmed;
+              trailingDot = '.';
+            }
+          }
+          
+          if (mentionedUser) {
+            return (
+              <React.Fragment key={`${i}-${j}`}>
+                <span className="text-apc-green font-black bg-apc-green/5 px-1 rounded">
+                  @{username}
+                </span>
+                {trailingDot}
+              </React.Fragment>
+            );
+          }
+        }
+        return subPart;
+      });
     });
   };
 
@@ -743,12 +816,36 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </div>
           
           {canAddObservation && (
-            <div className="mb-6 space-y-3">
+            <div className="mb-6 space-y-3 relative">
+              {showMentionDropdown && filteredMentionUsers.length > 0 && (
+                <div className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden animate-fadeIn">
+                  <div className="p-2 border-b border-slate-50 bg-slate-50/50">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">Mencionar a...</p>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {filteredMentionUsers.map(u => (
+                      <button
+                        key={u.id}
+                        onClick={() => handleMentionSelect(u)}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-apc-pink/5 text-left transition-all group"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:bg-apc-pink group-hover:text-white transition-all">
+                          {u.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-800 group-hover:text-apc-pink transition-all">{u.name}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">@{u.username}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <textarea 
-                placeholder="Escribe una observación detallada aquí..."
+                placeholder="Escribe una observación detallada aquí... Usa @ para mencionar."
                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-apc-pink font-medium resize-y min-h-[100px]"
                 value={traceabilityComment}
-                onChange={(e) => setTraceabilityComment(e.target.value)}
+                onChange={onCommentChange}
               />
               <div className="flex justify-end">
                 <button 
@@ -866,7 +963,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 onClick={() => setShowFastTrackModal(true)}
                 className="w-full mt-2 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 border-amber-400 text-amber-600 hover:bg-amber-50 transition-all"
               >
-                Aprobar y Saltar QA (Fast Track)
+                Ajuste de Ruta (Omitir QA)
               </button>
             )}
 
@@ -1164,7 +1261,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 <Icons.Ai className="text-blue-600" /> Auditoría ISO 9001:2015
               </h2>
               <button onClick={() => setShowAuditModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
-                <Icons.Close />
+                <Icons.X />
               </button>
             </div>
 
@@ -1222,7 +1319,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Reasignar Ejecutivos</h2>
               <button onClick={() => setShowReassignModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
-                <Icons.Close />
+                <Icons.X />
               </button>
             </div>
             
@@ -1281,7 +1378,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Delegar ODT</h2>
               <button onClick={() => setShowDelegationModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
-                <Icons.Close />
+                <Icons.X />
               </button>
             </div>
             
@@ -1508,7 +1605,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                <Icons.Ai className="text-amber-500" /> Fast Track (Salto de QA)
+                <Icons.Ai className="text-amber-500" /> Redirigir ODT (Ajuste de Ruta)
               </h2>
               <button onClick={() => setShowFastTrackModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
                 <Icons.X className="w-5 h-5" />
@@ -1518,16 +1615,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 mb-6">
               <p className="text-[10px] text-amber-700 font-bold leading-relaxed">
                 <span className="block mb-1 uppercase tracking-widest">⚠️ Protocolo ISO 9001:2015</span>
-                Esta acción permite saltar la revisión de QA obligatoria. Se requiere una justificación técnica válida para la auditoría de calidad.
+                Esta acción permite redirigir la ODT omitiendo la revisión de QA. Se requiere una justificación técnica válida para la auditoría de calidad.
               </p>
             </div>
 
             <div className="space-y-4 mb-8">
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Justificación del Salto</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Justificación del ajuste de ruta</label>
                 <textarea 
                   required
-                  placeholder="Explica por qué no se requiere revisión de QA para este avance..."
+                  placeholder="Explica por qué se redirige la ODT omitiendo la revisión de QA..."
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs outline-none font-medium h-24 focus:border-amber-400 transition-colors"
                   value={fastTrackJustification}
                   onChange={(e) => setFastTrackJustification(e.target.value)}
@@ -1565,14 +1662,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                     setShowFastTrackModal(false);
                     setFastTrackJustification('');
                     setFastTrackDestination('');
-                    setDialog({ type: 'alert', message: "Fast Track procesado exitosamente." });
+                    setDialog({ type: 'alert', message: "Redirección procesada exitosamente." });
                   } catch {
-                    setDialog({ type: 'alert', message: "Error al procesar el Fast Track." });
+                    setDialog({ type: 'alert', message: "Error al procesar la redirección." });
                   }
                 }}
                 className="flex-1 py-3 bg-amber-500 text-white font-black text-[10px] rounded-xl hover:bg-amber-600 uppercase tracking-widest transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:grayscale"
               >
-                Autorizar Salto
+                Ejecutar Redirección
               </button>
             </div>
           </div>

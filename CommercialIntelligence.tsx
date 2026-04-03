@@ -6,8 +6,9 @@ import { Icons } from './constants';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { fixOklchForHtml2Canvas } from './reportUtils';
 
 const CommercialIntelligence: React.FC = () => {
   const { projects, users, user: currentUser } = useODT();
@@ -68,9 +69,19 @@ const CommercialIntelligence: React.FC = () => {
     }, 0);
     const avgDelivery = finished.length > 0 ? (totalDays / finished.length).toFixed(1) : 'N/A';
 
-    // Rejection Rate
-    const totalRejections = filteredProjects.reduce((acc, p) => acc + (p.contadorCorrecciones || 0), 0);
-    const rejectionRate = total > 0 ? (totalRejections / total).toFixed(1) : '0';
+    // ODTs in QA stage (Normal process)
+    const odtsInQA = filteredProjects.filter(p => p.status?.includes('QA')).length;
+    
+    // Total Real Rework (Actual rejections from history)
+    const totalRealRework = filteredProjects.reduce((acc, p) => {
+      const rejectionsInHistory = p.comentarios?.filter(c => 
+        c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")
+      ).length || 0;
+      return acc + rejectionsInHistory;
+    }, 0);
+    
+    // Client Corrections
+    const totalClientCorrections = Math.round(filteredProjects.reduce((acc, p) => acc + (p.client_rejection_count || 0), 0));
 
     // Financials
     const totalAmount = filteredProjects.reduce((acc, p) => acc + (p.monto_proyectado || 0), 0);
@@ -80,7 +91,9 @@ const CommercialIntelligence: React.FC = () => {
     return {
       total,
       avgDelivery,
-      rejectionRate,
+      odtsInQA,
+      totalRealRework,
+      totalClientCorrections,
       totalAmount,
       totalFacturado,
       totalPagado
@@ -109,7 +122,9 @@ const CommercialIntelligence: React.FC = () => {
         status: p.status,
         facturado: p.facturado,
         pagado: p.pagado,
-        correcciones: p.contadorCorrecciones || 0,
+        retrabajoReal: p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0,
+        enRevisionQA: p.status?.includes('QA'),
+        correccionesCliente: p.client_rejection_count || 0,
         createdAt: p.createdAt,
         finishedAt: p.fecha_finalizado,
         areas: p.areas_seleccionadas
@@ -133,7 +148,19 @@ Basado en los datos, identifica:
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Analiza los siguientes datos de la agencia y genera el reporte estratégico solicitado:\n\n${JSON.stringify(dataForAI, null, 2)}`,
+        contents: `RESUMEN DE MÉTRICAS ACTUALES (FILTRADAS):
+- Volumen Total: ${kpis.total}
+- ODTs en Revisión QA (Proceso Normal): ${kpis.odtsInQA}
+- Total de Rechazos Internos (Retrabajo Real): ${kpis.totalRealRework}
+- Correcciones de Cliente: ${kpis.totalClientCorrections}
+- Entrega Promedio: ${kpis.avgDelivery} días
+${showFinancials ? `- Monto Total Proyectado: $${kpis.totalAmount.toLocaleString()}` : ''}
+
+CONTEXTO ESTRATÉGICO:
+Tienes ${kpis.odtsInQA} ODTs en revisión normal de calidad, pero has acumulado ${kpis.totalRealRework} rechazos internos totales (retrabajo real).
+
+DETALLE DE PROYECTOS PARA ANÁLISIS:
+${JSON.stringify(dataForAI, null, 2)}`,
         config: {
           systemInstruction,
           temperature: 0.7,
@@ -151,23 +178,33 @@ Basado en los datos, identifica:
 
   const downloadPDF = async () => {
     const element = document.getElementById('ai-report-content');
-    if (!element) return;
+    if (!element) {
+      console.error("Element #ai-report-content not found");
+      return;
+    }
     
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff'
-    });
-    
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const imgProps = pdf.getImageProperties(imgData);
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-    
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`Reporte_Inteligencia_Comercial_${new Date().toISOString().split('T')[0]}.pdf`);
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          fixOklchForHtml2Canvas(clonedDoc);
+        }
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Reporte_Inteligencia_Comercial_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+    }
   };
 
   const showFinancials = currentUser?.role === UserRole.Admin || currentUser?.role === UserRole.Cuentas_Lider || currentUser?.department === 'Administración' || currentUser?.department === 'Finanzas';
@@ -250,10 +287,12 @@ Basado en los datos, identifica:
       </div>
 
       {/* 3. Reactive KPIs Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${showFinancials ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-6`}>
         <KPICard label="Volumen ODTs" value={kpis.total} icon={<Icons.Project className="text-blue-500" />} />
         <KPICard label="Entrega Promedio" value={`${kpis.avgDelivery} días`} icon={<Icons.Calendar className="text-emerald-500" />} />
-        <KPICard label="Tasa de Rechazo" value={kpis.rejectionRate} icon={<Icons.Alert className="text-rose-500" />} />
+        <KPICard label="ODTs en Revisión QA" value={kpis.odtsInQA} icon={<Icons.Alert className="text-amber-500" />} />
+        <KPICard label="Total de Rechazos Internos" value={kpis.totalRealRework} icon={<Icons.Alert className="text-orange-500" />} />
+        <KPICard label="Correcciones de Cliente" value={kpis.totalClientCorrections} icon={<Icons.Alert className="text-rose-500" />} />
         {showFinancials && (
           <KPICard label="Monto Total" value={`$${kpis.totalAmount.toLocaleString()}`} icon={<Icons.Clients className="text-apc-green" />} />
         )}

@@ -258,8 +258,8 @@ export const generateAreaReport = (projects: Project[], users: User[], area: str
     const time = calculateWorkingTime(start, end, isFelipeAssigned);
 
     // Extract QA entry time from comments
-    const qaEntryComment = p.comentarios?.find(c => c.isSystemEvent && c.text.toUpperCase().includes('REVISIÓN QA'));
-    const qaExitComment = p.comentarios?.find(c => c.isSystemEvent && c.text.toUpperCase().includes('APROBADO en [REVISIÓN QA]'));
+    const qaEntryComment = p.comentarios?.find(c => c.isSystemEvent && c.text?.toUpperCase()?.includes('REVISIÓN QA'));
+    const qaExitComment = p.comentarios?.find(c => c.isSystemEvent && c.text?.toUpperCase()?.includes('APROBADO en [REVISIÓN QA]'));
     
     let qaTime = { totalHours: 0 };
     if (qaEntryComment && qaExitComment) {

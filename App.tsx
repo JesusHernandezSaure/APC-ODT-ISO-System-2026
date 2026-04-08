@@ -647,12 +647,12 @@ const AppContent: React.FC = () => {
       const id = params?.id || selectedProjectId;
       if (!id) return <div className="p-20 text-center font-black uppercase text-slate-400">ID de ODT no proporcionado</div>;
       
-      const project = projects.find(p => p.id.trim().toUpperCase() === id.trim().toUpperCase());
+      const project = projects.find(p => (p.id || '').trim().toUpperCase() === id.trim().toUpperCase());
       if (project) return <ProjectDetail project={project} onBack={() => navigate(-1)} />;
       
       // Also check in deleted projects if user is Admin
       if (user?.role === UserRole.Admin) {
-        const deletedProject = deletedProjects.find(p => p.id.trim().toUpperCase() === id.trim().toUpperCase());
+        const deletedProject = deletedProjects.find(p => (p.id || '').trim().toUpperCase() === id.trim().toUpperCase());
         if (deletedProject) return <ProjectDetail project={deletedProject} onBack={() => navigate(-1)} />;
       }
       

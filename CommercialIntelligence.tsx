@@ -47,13 +47,13 @@ const CommercialIntelligence: React.FC = () => {
   }, [projects, currentUser, filterBrand, filterExecutive, dateFrom, dateTo]);
 
   const brands = useMemo(() => {
-    const uniqueBrands = Array.from(new Set(projects.map(p => p.marca)));
+    const uniqueBrands = Array.from(new Set(projects.map(p => p.marca).filter(Boolean)));
     return ['Todas', ...uniqueBrands.sort()];
   }, [projects]);
 
   const executives = useMemo(() => {
     const execUsers = users.filter(u => u.role === UserRole.Cuentas_Opera || u.role === UserRole.Cuentas_Lider);
-    return [{ id: 'Todos', name: 'Todos' }, ...execUsers.sort((a, b) => a.name.localeCompare(b.name))];
+    return [{ id: 'Todos', name: 'Todos' }, ...execUsers.sort((a, b) => (a.name || '').localeCompare(b.name || ''))];
   }, [users]);
 
   // 3. Reactive KPIs
@@ -75,8 +75,8 @@ const CommercialIntelligence: React.FC = () => {
     // Total Real Rework (Actual rejections from history)
     const totalRealRework = filteredProjects.reduce((acc, p) => {
       const rejectionsInHistory = p.comentarios?.filter(c => 
-        c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")
-      ).length || 0;
+        c.isSystemEvent && c.text?.includes("RECHAZADO en [REVISIÓN QA")
+      )?.length || 0;
       return acc + rejectionsInHistory;
     }, 0);
     
@@ -122,7 +122,7 @@ const CommercialIntelligence: React.FC = () => {
         status: p.status,
         facturado: p.facturado,
         pagado: p.pagado,
-        retrabajoReal: p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0,
+        retrabajoReal: p.comentarios?.filter(c => c.isSystemEvent && c.text?.includes("RECHAZADO en [REVISIÓN QA"))?.length || 0,
         enRevisionQA: p.status?.includes('QA'),
         correccionesCliente: p.client_rejection_count || 0,
         createdAt: p.createdAt,
@@ -248,7 +248,7 @@ ${JSON.stringify(dataForAI, null, 2)}`,
             onChange={(e) => setFilterBrand(e.target.value)}
             className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-blue-500 transition-all font-bold text-xs appearance-none cursor-pointer"
           >
-            {brands.map(b => <option key={b} value={b}>{b.toUpperCase()}</option>)}
+            {brands.map(b => <option key={b} value={b}>{(b || '').toUpperCase()}</option>)}
           </select>
         </div>
 
@@ -260,7 +260,7 @@ ${JSON.stringify(dataForAI, null, 2)}`,
               onChange={(e) => setFilterExecutive(e.target.value)}
               className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-blue-500 transition-all font-bold text-xs appearance-none cursor-pointer"
             >
-              {executives.map(e => <option key={e.id} value={e.id}>{e.name.toUpperCase()}</option>)}
+              {executives.map(e => <option key={e?.id} value={e?.id}>{(e?.name || '').toUpperCase()}</option>)}
             </select>
           </div>
         )}

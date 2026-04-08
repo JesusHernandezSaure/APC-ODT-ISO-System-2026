@@ -111,6 +111,9 @@ export const generateMasterReport = (projects: Project[], users: User[], dateFro
       'Categoría': p.category,
       'Subcategoría': p.subCategory,
       'Status Final': p.status,
+      'Monto Proyectado': p.monto_proyectado || 0,
+      'Facturado': p.facturado ? 'SÍ' : 'NO',
+      'Pagado': p.pagado ? 'SÍ' : 'NO',
       'Fecha Creación': p.createdAt,
       'Fecha Entrega Prometida': p.fecha_entrega || 'N/A',
       'Fecha Real de Cierre': p.fecha_finalizado || 'N/A',
@@ -250,7 +253,7 @@ export const generateAreaReport = (projects: Project[], users: User[], area: str
     
     // Check if Felipe is assigned
     const felipe = users.find(u => u.name.toLowerCase().includes('felipe lópez'));
-    const isFelipeAssigned = assignments.some(a => a.usuarioId === felipe?.id);
+    const isFelipeAssigned = assignments.some(a => a.usuarioIds?.includes(felipe?.id || '') || a.usuarioId === felipe?.id);
     
     const time = calculateWorkingTime(start, end, isFelipeAssigned);
 
@@ -271,7 +274,10 @@ export const generateAreaReport = (projects: Project[], users: User[], area: str
       'Marca': p.marca,
       'Área': area,
       'Estado': p.status,
-      'Integrantes': assignments.map(a => users.find(u => u.id === a.usuarioId)?.name || 'Desconocido').join(', '),
+      'Integrantes': assignments.map(a => {
+        const assignedUsers = users.filter(u => a.usuarioIds?.includes(u.id) || a.usuarioId === u.id);
+        return assignedUsers.map(u => u.name).join(', ');
+      }).join(' | '),
       'Rechazos QA Interno': internalRejections,
       'Rechazos Cliente': p.client_rejection_count || 0,
       'Tiempo Realización (Días)': time.days,

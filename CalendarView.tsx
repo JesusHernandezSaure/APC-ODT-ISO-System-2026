@@ -41,7 +41,8 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
   const renderProjectDetail = (p: Project) => {
     const currentStage = p.etapa_actual || p.etapaActual || '';
     const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(currentStage));
-    const responsible = users.find(u => u.id === assignment?.usuarioId);
+    const responsibleUsers = users.filter(u => assignment?.usuarioIds?.includes(u.id) || assignment?.usuarioId === u.id);
+    const responsibleNames = responsibleUsers.map(u => u.name).join(', ');
     
     const createdDate = new Date(p.createdAt);
     const now = new Date();
@@ -84,7 +85,7 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
               </div>
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Responsable Actual</label>
-                <p className="font-bold text-slate-800 uppercase text-xs">{responsible?.name || 'Sin asignar'}</p>
+                <p className="font-bold text-slate-800 uppercase text-xs">{responsibleNames || 'Sin asignar'}</p>
               </div>
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Estatus</label>

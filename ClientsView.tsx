@@ -36,7 +36,12 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   }, [clients, user]);
 
   const accountsUsers = useMemo(() => 
-    (users || []).filter(u => u.role === UserRole.Cuentas_Opera || u.role === UserRole.Cuentas_Lider),
+    (users || []).filter(u => {
+      const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+      // Exclude Admins even if they have accounts roles
+      if (hasRole(u, UserRole.Admin)) return false;
+      return u.role === UserRole.Cuentas_Opera || u.role === UserRole.Cuentas_Lider;
+    }),
     [users]
   );
 

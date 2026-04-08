@@ -96,15 +96,16 @@ const AppContent: React.FC = () => {
       const costPerArea = (p.monto_proyectado || 0) / numAreas;
 
       const qaRejections = p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0;
-      const clientRejections = p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("RECHAZADO por Cliente")).length || 0;
+      const clientRejections = p.client_rejection_count || 0;
       
       const approvers = p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("APROBADO"))
         .map(c => `${c.authorName} (${c.text.split(' ')[0]})`)
         .join(" | ") || "N/A";
 
       const assignments = p.asignaciones?.map(a => {
-        const u = users.find(user => user.id === a.usuarioId);
-        return `${a.area}: ${u?.name || 'Pte'}`;
+        const assignedUsers = users.filter(user => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
+        const names = assignedUsers.map(u => u.name).join(", ");
+        return `${a.area}: ${names || 'Pte'}`;
       }).join(" | ") || "N/A";
 
       const lastComment = p.comentarios?.[0];
@@ -169,7 +170,13 @@ const AppContent: React.FC = () => {
 
     const categories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.category).filter(Boolean))], [projects]);
     const subCategories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.subCategory).filter(Boolean))], [projects]);
-    const assignableUsers = useMemo(() => ['Todas', ...new Set(users.map(u => u.name))], [users]);
+    const assignableUsers = useMemo(() => {
+      const filtered = users.filter(u => {
+        const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+        return !hasRole(u, UserRole.Admin);
+      });
+      return ['Todas', ...new Set(filtered.map(u => u.name))];
+    }, [users]);
 
     const myProjects = useMemo(() => {
       let result = projects?.filter(p => {
@@ -193,7 +200,7 @@ const AppContent: React.FC = () => {
         // 2. RBAC Logic: Leaders vs Operatives
         if (isLeaderRole) {
           if (userDept === 'cuentas') {
-            const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
+            const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(userId || '') || a.usuarioId === userId);
             const isOwner = p.assignedExecutives?.includes(userId || '');
             const isMyTurn = projectStage.includes('cuentas');
             if (!(isAssigned || isOwner || isMyTurn)) return false;
@@ -216,7 +223,7 @@ const AppContent: React.FC = () => {
           }
           if (!isInMyTurn) return false;
           const isAssigned = p.asignaciones?.some(a => 
-            a.usuarioId === userId && normalizeString(a.area) === userDept
+            (a.usuarioIds?.includes(userId || '') || a.usuarioId === userId) && normalizeString(a.area) === userDept
           );
           const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
           if (!isAssigned && !isOwner) return false;
@@ -246,7 +253,7 @@ const AppContent: React.FC = () => {
       if (filterResponsible !== 'Todas') {
         result = result.filter(p => {
           const assignedUser = users.find(u => u.name === filterResponsible);
-          return p.asignaciones?.some(a => a.usuarioId === assignedUser?.id) || 
+          return p.asignaciones?.some(a => a.usuarioIds?.includes(assignedUser?.id || '') || a.usuarioId === assignedUser?.id) || 
                  p.assignedExecutives?.includes(assignedUser?.id || '');
         });
       }
@@ -370,7 +377,13 @@ const AppContent: React.FC = () => {
 
     const categories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.category).filter(Boolean))], [projects]);
     const subCategories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.subCategory).filter(Boolean))], [projects]);
-    const assignableUsers = useMemo(() => ['Todas', ...new Set(users.map(u => u.name))], [users]);
+    const assignableUsers = useMemo(() => {
+      const filtered = users.filter(u => {
+        const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+        return !hasRole(u, UserRole.Admin);
+      });
+      return ['Todas', ...new Set(filtered.map(u => u.name))];
+    }, [users]);
 
     const qaProjects = useMemo(() => {
       let result = projects?.filter(p => {
@@ -387,14 +400,14 @@ const AppContent: React.FC = () => {
 
         // Cuentas Operatives see only ODTs they own or are assigned to
         if (userRole === UserRole.Cuentas_Opera) {
-          const isAssigned = p.asignaciones?.some(a => a.usuarioId === userId);
+          const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(userId || '') || a.usuarioId === userId);
           const isOwner = p.assignedExecutives?.includes(userId || '');
           return isAssigned || isOwner;
         }
 
         // QA Operatives and Medical Operatives see only assigned tasks in QA area
         if (userRole === UserRole.QA_Opera || userRole === UserRole.Medico_Opera) {
-          return p.asignaciones?.some(a => a.usuarioId === userId && normalizeString(a.area) === 'qa');
+          return p.asignaciones?.some(a => (a.usuarioIds?.includes(userId || '') || a.usuarioId === userId) && normalizeString(a.area) === 'qa');
         }
 
         return false;
@@ -422,7 +435,7 @@ const AppContent: React.FC = () => {
       if (filterResponsible !== 'Todas') {
         result = result.filter(p => {
           const assignedUser = users.find(u => u.name === filterResponsible);
-          return p.asignaciones?.some(a => a.usuarioId === assignedUser?.id) || 
+          return p.asignaciones?.some(a => a.usuarioIds?.includes(assignedUser?.id || '') || a.usuarioId === assignedUser?.id) || 
                  p.assignedExecutives?.includes(assignedUser?.id || '');
         });
       }

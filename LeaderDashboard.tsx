@@ -1,13 +1,140 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useODT } from './ODTContext';
-import { UserRole, Project } from './types';
+import { UserRole, Project, User, ProjectAssignment } from './types';
 import { normalizeString } from './workflowConfig';
 import { generateAreaReport, downloadCSV } from './reportUtils';
 
 interface LeaderDashboardProps {
   onViewProject: (id: string) => void;
 }
+
+const TeamAssignmentDropdown: React.FC<{
+  project: Project;
+  teamMembers: User[];
+  currentAssignment: ProjectAssignment | undefined;
+  currentAssignmentArea: string;
+  delegateProject: (projectId: string, area: string, userIds: string[]) => void;
+}> = ({ project, teamMembers, currentAssignment, currentAssignmentArea, delegateProject }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, showUp: false });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const toggleDropdown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const menuHeight = 280; // Slightly larger for safety
+      const showUp = spaceBelow < menuHeight;
+
+      setCoords({
+        top: showUp ? rect.top - 8 : rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+        showUp
+      });
+    }
+    setIsOpen(!isOpen);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const isOutsideButton = buttonRef.current && !buttonRef.current.contains(target);
+      const isOutsideMenu = menuRef.current && !menuRef.current.contains(target);
+      
+      if (isOutsideButton && isOutsideMenu) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div className="relative inline-block">
+      <button 
+        ref={buttonRef}
+        onClick={toggleDropdown}
+        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+          currentAssignment ? 'bg-apc-pink text-white shadow-sm' : 'bg-apc-green text-white animate-bounce shadow-lg shadow-apc-green/20'
+        }`}
+      >
+        {currentAssignment ? 'GESTIONAR EQUIPO' : 'ASIGNAR EQUIPO'}
+      </button>
+      
+      {isOpen && createPortal(
+        <div 
+          ref={menuRef}
+          className={`fixed bg-white border border-slate-100 rounded-2xl shadow-2xl z-[9999] p-4 w-64 animate-fadeIn ${coords.showUp ? 'origin-bottom' : 'origin-top'}`}
+          style={{ 
+            top: coords.showUp ? 'auto' : coords.top,
+            bottom: coords.showUp ? window.innerHeight - coords.top : 'auto',
+            left: Math.min(coords.left + coords.width - 256, window.innerWidth - 272),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex justify-between items-center mb-3 border-b pb-2">
+            <div className="flex flex-col">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Seleccionar Integrantes</p>
+              <p className="text-[7px] font-bold text-slate-300 uppercase tracking-tighter">Área: {currentAssignmentArea}</p>
+            </div>
+            <button onClick={() => setIsOpen(false)} className="text-slate-300 hover:text-slate-500 transition-colors p-1">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+          <div className="space-y-1 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+            {teamMembers.map(m => {
+              const isSelected = currentAssignment?.usuarioIds?.includes(m.id) || currentAssignment?.usuarioId === m.id;
+              return (
+                <label 
+                  key={m.id} 
+                  className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all ${isSelected ? 'bg-apc-pink/5 border border-apc-pink/10' : 'hover:bg-slate-50 border border-transparent'}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="relative flex items-center">
+                    <input 
+                      type="checkbox" 
+                      checked={isSelected}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        const currentIds = currentAssignment?.usuarioIds || (currentAssignment?.usuarioId ? [currentAssignment.usuarioId] : []);
+                        const newIds = isSelected 
+                          ? currentIds.filter((id: string) => id !== m.id)
+                          : [...currentIds, m.id];
+                        delegateProject(project.id, currentAssignmentArea, newIds);
+                      }}
+                      className="w-4 h-4 accent-apc-pink rounded border-slate-300 cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className={`text-[10px] font-bold uppercase truncate ${isSelected ? 'text-apc-pink' : 'text-slate-600'}`}>
+                      {m.name}
+                    </span>
+                    <span className="text-[7px] text-slate-400 font-black uppercase tracking-tighter truncate">{m.role}</span>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          <div className="mt-3 pt-2 border-t text-center">
+            <button 
+              onClick={() => setIsOpen(false)}
+              className="text-[9px] font-black text-apc-pink uppercase tracking-widest hover:underline px-4 py-1"
+            >
+              Cerrar Panel
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+};
 
 const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
   const { user, projects, users, delegateProject } = useODT();
@@ -35,13 +162,33 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
       const memberDept = normalizeString(u.department);
       const activeAreaNorm = normalizeString(activeArea);
       
-      if (user.role === UserRole.Medico_Lider) {
-        // El Medico Lider ve a ambos equipos si está en modo dual, 
-        // pero filtramos por el área activa para mayor claridad en la delegación
-        return memberDept === activeAreaNorm;
+      // Helper to check if user has a role (primary or secondary)
+      const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+
+      // Exclude Admins from assignment lists to avoid cluttering operational lists
+      if (hasRole(u, UserRole.Admin)) return false;
+
+      if (activeAreaNorm === 'qa') {
+        // En QA pueden estar: Correccion (QA Lider), QA_Opera, Medico_Lider, Medico_Opera
+        return (
+          hasRole(u, UserRole.Correccion) ||
+          hasRole(u, UserRole.QA_Opera) ||
+          hasRole(u, UserRole.Medico_Lider) ||
+          hasRole(u, UserRole.Medico_Opera) ||
+          memberDept === 'qa'
+        );
+      }
+
+      if (activeAreaNorm === 'medico') {
+        return (
+          hasRole(u, UserRole.Medico_Lider) ||
+          hasRole(u, UserRole.Medico_Opera) ||
+          memberDept === 'medico'
+        );
       }
       
-      return memberDept === normalizeString(user.department);
+      // Para otras áreas, por departamento
+      return memberDept === activeAreaNorm;
     });
   }, [user, users, activeArea]);
 
@@ -62,7 +209,7 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     }
 
     if (memberFilter !== 'all') {
-      filtered = filtered.filter(p => p.asignaciones?.some(a => a.usuarioId === memberFilter));
+      filtered = filtered.filter(p => p.asignaciones?.some(a => a.usuarioIds?.includes(memberFilter) || a.usuarioId === memberFilter));
     }
     
     return filtered;
@@ -127,7 +274,7 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
       {/* Tarjetas de Carga del Equipo */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {teamMembers.map(m => {
-          const load = projects.filter(p => p.asignaciones?.some(a => a.usuarioId === m.id) && p.status !== 'Finalizado').length;
+          const load = projects.filter(p => p.asignaciones?.some(a => a.usuarioIds?.includes(m.id) || a.usuarioId === m.id) && p.status !== 'Finalizado').length;
           const isMe = m.id === user?.id;
           
           return (
@@ -175,7 +322,7 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
               areaProjects.map(p => {
                 const currentAssignmentArea = activeArea;
                 const currentAssignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(currentAssignmentArea));
-                const isAssignedToMe = currentAssignment?.usuarioId === user?.id;
+                const isAssignedToMe = currentAssignment?.usuarioIds?.includes(user?.id || '') || currentAssignment?.usuarioId === user?.id;
 
                 const hasClientLink = p.presentation_link || p.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
                 const displayStatus = (p.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : p.status;
@@ -190,7 +337,9 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                       <div className="flex items-center gap-2">
                          <div className={`w-2 h-2 rounded-full ${currentAssignment ? 'bg-apc-green shadow-sm' : 'bg-apc-pink/30 animate-pulse'}`}></div>
                          <span className={`text-xs font-bold uppercase ${currentAssignment ? 'text-slate-600' : 'text-apc-pink italic'}`}>
-                           {users.find(m => m.id === currentAssignment?.usuarioId)?.name || 'PENDIENTE ASIGNAR'}
+                           {currentAssignment 
+                             ? users.filter(m => currentAssignment.usuarioIds?.includes(m.id) || currentAssignment.usuarioId === m.id).map(u => u.name).join(', ')
+                             : 'PENDIENTE ASIGNAR'}
                          </span>
                       </div>
                     </td>
@@ -213,22 +362,13 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                          DETALLE
                        </button>
-                       <select 
-                         className={`border-none rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all outline-none ${
-                           currentAssignment ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-apc-green text-white hover:bg-apc-green/80 animate-bounce'
-                         }`} 
-                         onChange={(e) => {
-                           if (e.target.value) delegateProject(p.id, currentAssignmentArea, e.target.value);
-                         }}
-                         value={currentAssignment?.usuarioId || ''}
-                       >
-                         <option value="">-- ASIGNAR RESPONSABLE --</option>
-                         {teamMembers.map(m => (
-                           <option key={m.id} value={m.id}>
-                             {m.id === user?.id ? `MI PERSONA (${m.name.toUpperCase()})` : m.name.toUpperCase()}
-                           </option>
-                         ))}
-                       </select>
+                       <TeamAssignmentDropdown 
+                         project={p}
+                         teamMembers={teamMembers}
+                         currentAssignment={currentAssignment}
+                         currentAssignmentArea={currentAssignmentArea}
+                         delegateProject={delegateProject}
+                       />
                     </td>
                   </tr>
                 );

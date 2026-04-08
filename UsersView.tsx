@@ -41,17 +41,17 @@ const UsersView: React.FC = () => {
         setIsSeeding(true);
         
         const testUsers = [
-          { name: 'Admin General', username: 'admin.apc', password: '123', role: UserRole.Admin, department: 'Sistemas' },
-          { name: 'Líder de Cuentas', username: 'cuentas.lider', password: '123', role: UserRole.Cuentas_Lider, department: 'Cuentas' },
-          { name: 'Ejecutivo Cuentas 1', username: 'cuentas.opera1', password: '123', role: UserRole.Cuentas_Opera, department: 'Cuentas' },
-          { name: 'Líder Creativo', username: 'creativo.lider', password: '123', role: UserRole.Lider_Operativo, department: 'Creativo' },
-          { name: 'Diseñador Senior', username: 'diseno.opera', password: '123', role: UserRole.Operativo, department: 'Arte' },
-          { name: 'Director Médico', username: 'medical.lider', password: '123', role: UserRole.Medico_Lider, department: 'Médico' },
-          { name: 'Médico Operativo', username: 'medical.opera', password: '123', role: UserRole.Medico_Opera, department: 'Médico' },
-          { name: 'Editor Audiovisual', username: 'video.opera', password: '123', role: UserRole.Operativo, department: 'Audio y Video' },
-          { name: 'Desarrollador Digital', username: 'digital.opera', password: '123', role: UserRole.Operativo, department: 'Digital' },
-          { name: 'QA Lider (Master)', username: 'qa.lider', password: '123', role: UserRole.Correccion, department: 'QA' },
-          { name: 'Analista Finanzas', username: 'finanzas.test', password: '123', role: UserRole.Operativo, department: 'Administración' },
+          { name: 'Admin General', username: 'admin.apc', password: '123', role: UserRole.Admin, department: 'Sistemas', roles: [UserRole.Admin] },
+          { name: 'Líder de Cuentas', username: 'cuentas.lider', password: '123', role: UserRole.Cuentas_Lider, department: 'Cuentas', roles: [UserRole.Cuentas_Lider] },
+          { name: 'Ejecutivo Cuentas 1', username: 'cuentas.opera1', password: '123', role: UserRole.Cuentas_Opera, department: 'Cuentas', roles: [UserRole.Cuentas_Opera] },
+          { name: 'Líder Creativo', username: 'creativo.lider', password: '123', role: UserRole.Lider_Operativo, department: 'Creativo', roles: [UserRole.Lider_Operativo] },
+          { name: 'Diseñador Senior', username: 'diseno.opera', password: '123', role: UserRole.Operativo, department: 'Arte', roles: [UserRole.Operativo] },
+          { name: 'Director Médico', username: 'medical.lider', password: '123', role: UserRole.Medico_Lider, department: 'Médico', roles: [UserRole.Medico_Lider, UserRole.Correccion] },
+          { name: 'Médico Operativo', username: 'medical.opera', password: '123', role: UserRole.Medico_Opera, department: 'Médico', roles: [UserRole.Medico_Opera] },
+          { name: 'Editor Audiovisual', username: 'video.opera', password: '123', role: UserRole.Operativo, department: 'Audio y Video', roles: [UserRole.Operativo] },
+          { name: 'Desarrollador Digital', username: 'digital.opera', password: '123', role: UserRole.Operativo, department: 'Digital', roles: [UserRole.Operativo] },
+          { name: 'QA Lider (Master)', username: 'qa.lider', password: '123', role: UserRole.Correccion, department: 'QA', roles: [UserRole.Correccion] },
+          { name: 'Analista Finanzas', username: 'finanzas.test', password: '123', role: UserRole.Operativo, department: 'Administración', roles: [UserRole.Operativo] },
         ];
 
         try {
@@ -187,19 +187,41 @@ const UsersView: React.FC = () => {
                  </div>
                </div>
 
-               <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Rol en Sistema</label>
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Rol Principal</label>
                   <select value={isEditing.role} onChange={e => setIsEditing({...isEditing, role: e.target.value as UserRole})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green font-black text-xs appearance-none cursor-pointer">
-                    <option value={UserRole.Admin}>Administrador</option>
-                    <option value={UserRole.Cuentas_Lider}>Líder Cuentas</option>
-                    <option value={UserRole.Cuentas_Opera}>Ejecutivo Cuentas</option>
-                    <option value={UserRole.Lider_Operativo}>Líder Operativo</option>
-                    <option value={UserRole.Operativo}>Operativo</option>
-                    <option value={UserRole.Correccion}>Líder de QA</option>
-                    <option value={UserRole.QA_Opera}>QA Operativo</option>
-                    <option value={UserRole.Medico_Lider}>Médico Líder</option>
-                    <option value={UserRole.Medico_Opera}>Médico Operativo</option>
+                    {Object.entries(ROLE_LABELS).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
                   </select>
+               </div>
+
+               <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Roles Adicionales (Multirole)</label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border-2 border-slate-100 max-h-40 overflow-y-auto">
+                    {Object.entries(ROLE_LABELS).map(([val, label]) => {
+                      const roleVal = val as UserRole;
+                      const isChecked = isEditing.roles?.includes(roleVal) || isEditing.role === roleVal;
+                      return (
+                        <label key={val} className="flex items-center gap-2 cursor-pointer group">
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked}
+                            disabled={isEditing.role === roleVal}
+                            onChange={() => {
+                              const currentRoles = isEditing.roles || [];
+                              const newRoles = currentRoles.includes(roleVal)
+                                ? currentRoles.filter(r => r !== roleVal)
+                                : [...currentRoles, roleVal];
+                              setIsEditing({ ...isEditing, roles: newRoles });
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-apc-green focus:ring-apc-green"
+                          />
+                          <span className="text-[10px] font-bold text-slate-600 group-hover:text-apc-green transition-colors">{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                </div>
 
                <div>

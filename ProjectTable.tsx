@@ -34,22 +34,36 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
           const isQA = currentStage.toUpperCase().includes('QA') || p.status === 'QA';
           const targetArea = isQA ? 'QA' : currentStage;
           const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
-          let responsible = users?.find((u: User) => u.id === assignment?.usuarioId);
+          let responsibleUsers: User[] = [];
+          
+          if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
+            responsibleUsers = users.filter((u: User) => assignment.usuarioIds.includes(u.id));
+          } else if (assignment && assignment.usuarioId) {
+            const u = users.find((u: User) => u.id === assignment.usuarioId);
+            if (u) responsibleUsers = [u];
+          }
+
           let isLeaderFallback = false;
+          if (responsibleUsers.length === 0) {
+            // Si no hay asignación directa, el responsable es el Líder del área actual
+            const leader = users?.find((u: User) => {
+              const memberDept = normalizeString(u.department);
+              const targetAreaNorm = normalizeString(targetArea);
+              const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+              
+              return memberDept === targetAreaNorm && 
+                (hasRole(u, UserRole.Lider_Operativo) || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider));
+            });
+            if (leader) {
+              responsibleUsers = [leader];
+              isLeaderFallback = true;
+            }
+          }
+
+          const isUnassigned = highlightUnassigned && responsibleUsers.length === 0;
 
           const hasClientLink = p.presentation_link || p.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
           const displayStatus = (p.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : p.status;
-
-          if (!responsible) {
-            // Si no hay asignación directa, el responsable es el Líder del área actual
-            responsible = users?.find((u: User) => 
-              normalizeString(u.department) === normalizeString(targetArea) && 
-              (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion)
-            );
-            if (responsible) isLeaderFallback = true;
-          }
-
-          const isUnassigned = highlightUnassigned && !responsible;
 
           const correctionCount = p.correction_count_after_presentation || 0;
           const isRejected = p.client_feedback === 'rejected';
@@ -99,18 +113,41 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
                 <div className="text-[10px] text-slate-400 font-medium uppercase truncate max-w-[200px]">
                   {p?.marca} {p?.producto ? `| ${p.producto}` : ''}
                 </div>
-                <div className="text-[9px] text-slate-500 font-bold uppercase truncate max-w-[200px] mt-0.5">
-                  {p?.subCategory || 'S/C'} | {p?.category || 'S/Cat'}
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="text-[9px] text-slate-500 font-bold uppercase truncate max-w-[150px]">
+                    {p?.subCategory || 'S/C'} | {p?.category || 'S/Cat'}
+                  </div>
+                  {p.esCampana && (
+                    <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-emerald-200 flex items-center gap-1">
+                      <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div>
+                      Campaña
+                    </span>
+                  )}
                 </div>
               </td>
               <td className="px-6 py-4">
-                 {responsible ? (
+                 {responsibleUsers.length > 0 ? (
                     <div className="flex items-center gap-2">
-                       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-black border ${isLeaderFallback ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-800'}`}>
-                          {(responsible.name || '??').substring(0,2).toUpperCase()}
+                       <div className="flex -space-x-2 overflow-hidden">
+                          {responsibleUsers.slice(0, 2).map((u) => (
+                             <div 
+                                key={u.id}
+                                className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-black border ring-2 ring-white ${isLeaderFallback ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-800'}`}
+                                title={u.name}
+                             >
+                                {(u.name || '??').substring(0,2).toUpperCase()}
+                             </div>
+                          ))}
+                          {responsibleUsers.length > 2 && (
+                             <div className="w-6 h-6 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-[7px] font-black text-slate-400 ring-2 ring-white">
+                                +{responsibleUsers.length - 2}
+                             </div>
+                          )}
                        </div>
                        <div className="flex flex-col">
-                          <span className="text-[10px] font-bold text-slate-600 uppercase leading-none">{responsible.name || 'Sin Nombre'}</span>
+                          <span className="text-[10px] font-bold text-slate-600 uppercase leading-none truncate max-w-[100px]">
+                             {responsibleUsers.map(u => u.name).join(', ')}
+                          </span>
                           {isLeaderFallback && <span className="text-[7px] font-black text-amber-600 uppercase tracking-tighter mt-0.5">Líder de Área</span>}
                        </div>
                     </div>

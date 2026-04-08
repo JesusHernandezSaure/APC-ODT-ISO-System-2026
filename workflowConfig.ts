@@ -33,6 +33,9 @@ export const CATEGORIES_CONFIG: Record<string, string[]> = {
   ],
   'Parrilla': [
     'Parrilla de contenido (Redes sociales)', 'Otro'
+  ],
+  'Campaña': [
+    'Otro'
   ]
 };
 

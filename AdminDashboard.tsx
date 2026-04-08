@@ -30,12 +30,17 @@ const AdminDashboard: React.FC = () => {
   const [exportDateTo, setExportDateTo] = useState('');
 
   const executives = useMemo(() => 
-    (users || []).filter(u => u?.role === UserRole.Cuentas_Opera || u?.role === UserRole.Cuentas_Lider), 
+    (users || []).filter(u => {
+      const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+      // Exclude Admins even if they have executive roles
+      if (hasRole(u, UserRole.Admin)) return false;
+      return u?.role === UserRole.Cuentas_Opera || u?.role === UserRole.Cuentas_Lider;
+    }), 
   [users]);
 
   const brands = useMemo(() => {
     if (!projects) return ['Todas'];
-    const uniqueBrands = Array.from(new Set(projects.map(p => p.marca)));
+    const uniqueBrands = Array.from(new Set(projects.map(p => p?.marca).filter(Boolean)));
     return ['Todas', ...uniqueBrands.sort()];
   }, [projects]);
 
@@ -279,7 +284,7 @@ const AdminDashboard: React.FC = () => {
             onChange={(e) => setFilterBrand(e.target.value)}
             className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-blue-500 transition-all font-bold text-xs appearance-none cursor-pointer"
           >
-            {brands.map(b => <option key={b} value={b}>{b.toUpperCase()}</option>)}
+            {brands.map(b => <option key={b} value={b}>{(b || '').toUpperCase()}</option>)}
           </select>
         </div>
         <div className="space-y-2">

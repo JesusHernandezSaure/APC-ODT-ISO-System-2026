@@ -34,13 +34,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     updateProjectId,
     updateProjectAreas,
     fastTrackProject,
-    reassignProjectAndFolder
+    reassignProjectAndFolder,
+    updateAreaStatus,
+    toggleClientStandby
   } = useODT();
   const navigate = useNavigate();
   const [briefContent, setBriefContent] = useState(project.brief);
   const [isEditingId, setIsEditingId] = useState(false);
   const [newId, setNewId] = useState(project.id);
   const [traceabilityComment, setTraceabilityComment] = useState('');
+  const [selectedAreasToReturn, setSelectedAreasToReturn] = useState<string[]>([]);
 
   React.useEffect(() => {
     setNewId(project.id);
@@ -61,7 +64,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [fastTrackDestination, setFastTrackDestination] = useState('');
   const [selectedAreasForEdit, setSelectedAreasForEdit] = useState<string[]>(project.areas_seleccionadas || []);
   const [selectedExecutives, setSelectedExecutives] = useState<string[]>(project.assignedExecutives || []);
-  const [selectedDelegateId, setSelectedDelegateId] = useState('');
+  const [selectedDelegateIds, setSelectedDelegateIds] = useState<string[]>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newDeliveryDate, setNewDeliveryDate] = useState(project.fecha_entrega || '');
 
@@ -114,32 +117,47 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     );
   }, [roadmapStages, currentStageName]);
 
+  const hasRole = (u: User | null, role: UserRole) => {
+    if (!u) return false;
+    return u.role === role || (u.roles && u.roles.includes(role));
+  };
+
   const canOperate = useMemo(() => {
     if (!user) return false;
-    if (user.role === UserRole.Admin) return true;
+    if (hasRole(user, UserRole.Admin)) return true;
     
     if (isQAStage) {
-      const isQaLider = user.role === UserRole.Correccion;
-      const isQaOperaAssigned = user.role === UserRole.QA_Opera && project.asignaciones?.some(a => a.usuarioId === user.id);
-      const isMedicalLider = user.role === UserRole.Medico_Lider;
-      const isMedicalOperaAssigned = user.role === UserRole.Medico_Opera && project.asignaciones?.some(a => a.usuarioId === user.id);
+      const isQaLider = hasRole(user, UserRole.Correccion);
+      const isQaOperaAssigned = hasRole(user, UserRole.QA_Opera) && project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
+      const isMedicalLider = hasRole(user, UserRole.Medico_Lider);
+      const isMedicalOperaAssigned = hasRole(user, UserRole.Medico_Opera) && project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
       return isQaLider || isQaOperaAssigned || isMedicalLider || isMedicalOperaAssigned;
     }
     
     if (isProductionStage) {
       const currentArea = roadmapStages[currentIdx];
-      const isAreaLead = (user.role === UserRole.Lider_Operativo || user.role === UserRole.Medico_Lider) && user.department === currentArea;
-      const isDirectlyAssigned = project.asignaciones?.some(a => a.usuarioId === user.id);
+      
+      if (project.esCampana) {
+        // In campaign mode, any user assigned to an area that is "En Proceso" can operate
+        const userArea = user.department;
+        const isAreaLead = (hasRole(user, UserRole.Lider_Operativo) || hasRole(user, UserRole.Medico_Lider)) && project.areas_seleccionadas?.includes(userArea);
+        const isDirectlyAssigned = project.asignaciones?.some(a => (a.usuarioIds?.includes(user.id) || a.usuarioId === user.id) && project.areas_seleccionadas?.includes(a.area));
+        const areaStatus = project.estadoPorArea?.[userArea];
+        return (isAreaLead || isDirectlyAssigned) && (areaStatus === 'En Proceso' || areaStatus === 'Rechazado QA');
+      }
+
+      const isAreaLead = (hasRole(user, UserRole.Lider_Operativo) || hasRole(user, UserRole.Medico_Lider)) && user.department === currentArea;
+      const isDirectlyAssigned = project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
       return isAreaLead || isDirectlyAssigned;
     }
 
     // Fix: Explicitly casting to string to avoid "no overlap" error caused by narrowed literal types
-    if (isInitialStage) return user.department === 'Cuentas' || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera;
+    if (isInitialStage) return user.department === 'Cuentas' || hasRole(user, UserRole.Cuentas_Lider) || hasRole(user, UserRole.Cuentas_Opera);
     if ((currentStageName as string) === (GLOBAL_STAGES.CLOSING as string)) return user.department === 'Cuentas';
     if ((currentStageName as string) === (GLOBAL_STAGES.BILLING as string)) return user.department === 'Administración' || user.department === 'Finanzas';
 
     return false;
-  }, [user, currentIdx, isQAStage, isProductionStage, isInitialStage, currentStageName, project.asignaciones, roadmapStages]);
+  }, [user, currentIdx, isQAStage, isProductionStage, isInitialStage, currentStageName, project.asignaciones, roadmapStages, project.esCampana, project.areas_seleccionadas, project.estadoPorArea]);
 
   const canAddObservation = useMemo(() => {
     if (!user) return false;
@@ -264,12 +282,18 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     }
 
     try {
-      await advanceProjectStage(project.id, comment);
-      
-      if (nextStageName?.includes('REVISIÓN QA')) {
-        setDialog({ type: 'alert', message: 'Material enviado exitosamente a Corrección' });
+      if (project.esCampana && isProductionStage) {
+        const userArea = user.department;
+        await updateAreaStatus(project.id, userArea, 'En QA', comment);
+        setDialog({ type: 'alert', message: `Material de [${userArea}] enviado a QA.` });
       } else {
-        setDialog({ type: 'alert', message: `Éxito: ODT enviada a ${nextStageName}` });
+        await advanceProjectStage(project.id, comment);
+        
+        if (nextStageName?.includes('REVISIÓN QA')) {
+          setDialog({ type: 'alert', message: 'Material enviado exitosamente a Corrección' });
+        } else {
+          setDialog({ type: 'alert', message: `Éxito: ODT enviada a ${nextStageName}` });
+        }
       }
       
       setDeliveryLink('');
@@ -362,16 +386,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   };
 
   const handleDelegate = async () => {
-    if (!selectedDelegateId) return;
+    if (selectedDelegateIds.length === 0) return;
     try {
       const currentStage = (project.etapa_actual || project.etapaActual || '');
       const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
       const targetArea = isQA ? 'QA' : currentStage;
       
-      await delegateProject(project.id, targetArea, selectedDelegateId);
-      setDialog({ type: 'alert', message: `ODT delegada exitosamente a ${users.find(u => u.id === selectedDelegateId)?.name}` });
+      await delegateProject(project.id, targetArea, selectedDelegateIds);
+      setDialog({ type: 'alert', message: `ODT delegada exitosamente.` });
       setShowDelegationModal(false);
-      setSelectedDelegateId('');
+      setSelectedDelegateIds([]);
     } catch (e) {
       console.error("Delegation failed:", e);
       setDialog({ type: 'alert', message: "Error al delegar la ODT." });
@@ -514,6 +538,19 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               <h2 className="text-lg font-bold text-white/90 uppercase tracking-wide leading-snug">
                 {project.empresa} | {project.producto}
               </h2>
+              {project.esCampana && (
+                <div className="mt-2 flex flex-col gap-1">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 rounded-lg border border-white/30 w-fit">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-white">MODO CAMPAÑA</span>
+                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></div>
+                  </div>
+                  {project.detalleEntregableCampaña && (
+                    <p className="text-[10px] font-bold text-white/70 italic">
+                      Detalle: {project.detalleEntregableCampaña}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-2 pt-3">
                 <span className="text-[10px] bg-white/10 text-white px-3 py-1.5 rounded-xl font-black uppercase border border-white/10 flex items-center gap-2 shadow-sm">
                   <Icons.Users className="w-3 h-3 opacity-60" />
@@ -894,11 +931,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               const currentStage = (project.etapa_actual || project.etapaActual || '');
               const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
               const targetArea = isQA ? 'QA' : currentStage;
-              const isLeader = user?.role === UserRole.Lider_Operativo && user?.department === targetArea;
-              const isCorreccion = user?.role === UserRole.Correccion && isQA;
-              const isMedicalLider = user?.role === UserRole.Medico_Lider && (isQA || targetArea === 'Médico');
+              const isLeader = hasRole(user, UserRole.Lider_Operativo) && user?.department === targetArea;
+              const isCorreccion = hasRole(user, UserRole.Correccion) && isQA;
+              const isMedicalLider = hasRole(user, UserRole.Medico_Lider) && (isQA || targetArea === 'Médico');
               
-              if (isLeader || isCorreccion || isMedicalLider || user?.role === UserRole.Admin) {
+              if (isLeader || isCorreccion || isMedicalLider || hasRole(user, UserRole.Admin)) {
                 return (
                   <button 
                     onClick={() => setShowDelegationModal(true)}
@@ -916,26 +953,53 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
             const targetArea = isQA ? 'QA' : currentStage;
             const assignment = project.asignaciones?.find(a => a.area === targetArea);
-            let responsible = users?.find(u => u.id === assignment?.usuarioId);
+            
+            let responsibleUsers: User[] = [];
             let isLeaderDisplay = false;
 
-            if (!responsible) {
-              responsible = users?.find(u => 
+            if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
+              responsibleUsers = users.filter(u => assignment.usuarioIds.includes(u.id));
+            } else if (assignment && assignment.usuarioId) {
+              // Backward compatibility for single ID
+              const u = users.find(u => u.id === assignment.usuarioId);
+              if (u) responsibleUsers = [u];
+            }
+
+            if (responsibleUsers.length === 0) {
+              const leader = users?.find(u => 
                 u.department === targetArea && 
                 (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider)
               );
-              if (responsible) isLeaderDisplay = true;
+              if (leader) {
+                responsibleUsers = [leader];
+                isLeaderDisplay = true;
+              }
             }
 
-            return responsible ? (
+            return responsibleUsers.length > 0 ? (
               <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black border ${isLeaderDisplay ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-apc-pink/10 border-apc-pink/20 text-apc-pink'}`}>
-                  {(responsible.name || '??').substring(0,2).toUpperCase()}
+                <div className="flex -space-x-2 overflow-hidden">
+                  {responsibleUsers.slice(0, 3).map((u) => (
+                    <div 
+                      key={u.id} 
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black border ring-2 ring-white ${isLeaderDisplay ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-apc-pink/10 border-apc-pink/20 text-apc-pink'}`}
+                      title={u.name}
+                    >
+                      {(u.name || '??').substring(0,2).toUpperCase()}
+                    </div>
+                  ))}
+                  {responsibleUsers.length > 3 && (
+                    <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[8px] font-black text-slate-500 ring-2 ring-white">
+                      +{responsibleUsers.length - 3}
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <p className="text-xs font-black text-slate-800 uppercase leading-none">{responsible.name}</p>
+                  <p className="text-xs font-black text-slate-800 uppercase leading-none">
+                    {responsibleUsers.map(u => u.name).join(', ')}
+                  </p>
                   <p className={`text-[8px] font-black uppercase mt-1 ${isLeaderDisplay ? 'text-amber-600' : 'text-apc-pink'}`}>
-                    {isLeaderDisplay ? `Líder de ${targetArea} (Pte. Delegar)` : `Operativo ${targetArea}`}
+                    {isLeaderDisplay ? `Líder de ${targetArea} (Pte. Delegar)` : `Equipo ${targetArea}`}
                   </p>
                 </div>
               </div>
@@ -999,18 +1063,43 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                     CALIDAD OK
                   </button>
                   <div className="flex flex-col gap-1">
-                    <select 
-                      className="text-[9px] p-1 border rounded bg-white font-bold"
-                      value={returnArea}
-                      onChange={(e) => setReturnArea(e.target.value)}
-                    >
-                      <option value="">Regresar a...</option>
-                      {(project.areas_seleccionadas || []).map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
+                    {project.esCampana ? (
+                      <div className="p-2 bg-white border rounded space-y-1 max-h-32 overflow-y-auto">
+                        <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Áreas a corregir:</p>
+                        {(project.areas_seleccionadas || []).map(area => (
+                          <label key={area} className="flex items-center gap-2 cursor-pointer">
+                            <input 
+                              type="checkbox"
+                              checked={selectedAreasToReturn.includes(area)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedAreasToReturn([...selectedAreasToReturn, area]);
+                                else setSelectedAreasToReturn(selectedAreasToReturn.filter(a => a !== area));
+                              }}
+                              className="w-3 h-3 rounded text-apc-pink"
+                            />
+                            <span className="text-[9px] font-bold text-slate-600">{area}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <select 
+                        className="text-[9px] p-1 border rounded bg-white font-bold"
+                        value={returnArea}
+                        onChange={(e) => setReturnArea(e.target.value)}
+                      >
+                        <option value="">Regresar a...</option>
+                        {(project.areas_seleccionadas || []).map(a => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                    )}
                     <button 
                       onClick={() => {
                         if (!accountsFeedback) { alert("Debe dejar instrucciones para el área."); return; }
-                        processAccountsReview(project.id, false, accountsFeedback, returnArea);
+                        if (project.esCampana) {
+                          if (selectedAreasToReturn.length === 0) { alert("Seleccione al menos un área."); return; }
+                          processAccountsReview(project.id, false, accountsFeedback, undefined, selectedAreasToReturn);
+                        } else {
+                          processAccountsReview(project.id, false, accountsFeedback, returnArea);
+                        }
                       }}
                       className="py-2 bg-rose-600 text-white font-black text-[9px] rounded-lg hover:bg-rose-700 uppercase"
                     >
@@ -1052,7 +1141,15 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 ) : (
                   /* Step 3: Client Feedback */
                   <div className="space-y-4 p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                    <p className="text-[10px] font-black text-amber-600 uppercase">3. Resultado de Presentación</p>
+                    <div className="flex justify-between items-center">
+                      <p className="text-[10px] font-black text-amber-600 uppercase">3. Resultado de Presentación</p>
+                      <button 
+                        onClick={() => toggleClientStandby(project.id, project.status !== 'En revisión con cliente')}
+                        className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-all ${project.status === 'En revisión con cliente' ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-600'}`}
+                      >
+                        {project.status === 'En revisión con cliente' ? 'PAUSAR STANDBY' : 'ENVIAR A CLIENTE (STANDBY)'}
+                      </button>
+                    </div>
                     <div className="flex flex-col gap-2">
                       <button 
                         onClick={() => setClientFeedbackResult('approved')}
@@ -1083,22 +1180,47 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                           onChange={(e) => setClientFeedbackComment(e.target.value)}
                         />
                         {clientFeedbackResult !== 'approved' && (
-                          <select 
-                            className="w-full text-[10px] p-2 border rounded-xl bg-white font-bold"
-                            value={returnArea}
-                            onChange={(e) => setReturnArea(e.target.value)}
-                          >
-                            <option value="">Regresar a área...</option>
-                            {(project.areas_seleccionadas || []).map(a => <option key={a} value={a}>{a}</option>)}
-                          </select>
+                          <>
+                            {!project.esCampana ? (
+                              <select 
+                                className="w-full text-[10px] p-2 border rounded-xl bg-white font-bold"
+                                value={returnArea}
+                                onChange={(e) => setReturnArea(e.target.value)}
+                              >
+                                <option value="">Regresar a área...</option>
+                                {(project.areas_seleccionadas || []).map(a => <option key={a} value={a}>{a}</option>)}
+                              </select>
+                            ) : (
+                              <div className="p-3 bg-white border rounded-xl space-y-2">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Áreas a corregir (Rollback Selectivo):</p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {(project.areas_seleccionadas || []).map(area => (
+                                    <label key={area} className="flex items-center gap-2 cursor-pointer">
+                                      <input 
+                                        type="checkbox"
+                                        checked={selectedAreasToReturn.includes(area)}
+                                        onChange={(e) => {
+                                          if (e.target.checked) setSelectedAreasToReturn([...selectedAreasToReturn, area]);
+                                          else setSelectedAreasToReturn(selectedAreasToReturn.filter(a => a !== area));
+                                        }}
+                                        className="w-4 h-4 rounded text-apc-pink"
+                                      />
+                                      <span className="text-[10px] font-bold text-slate-600">{area}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                         <button 
                           onClick={() => {
-                            if (clientFeedbackResult !== 'approved' && (!clientFeedbackComment || !returnArea)) {
-                              alert("Debe dejar comentarios y seleccionar área de retorno.");
-                              return;
+                            if (clientFeedbackResult !== 'approved') {
+                              if (!clientFeedbackComment) { alert("Debe dejar comentarios."); return; }
+                              if (project.esCampana && selectedAreasToReturn.length === 0) { alert("Seleccione al menos un área."); return; }
+                              if (!project.esCampana && !returnArea) { alert("Seleccione área de retorno."); return; }
                             }
-                            processClientFeedback(project.id, clientFeedbackResult, clientFeedbackComment, returnArea);
+                            processClientFeedback(project.id, clientFeedbackResult, clientFeedbackComment, returnArea, selectedAreasToReturn);
                           }}
                           className="w-full py-3 bg-slate-900 text-white font-black text-[10px] rounded-xl hover:bg-slate-800 uppercase tracking-widest shadow-md"
                         >
@@ -1116,16 +1238,62 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         {isQAStage && (canOperate || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera) && project.status !== 'Finalizado' && project.category !== 'PARRILLA RRSS' && (
           <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-2xl border-t-4 border-apc-pink">
             <h3 className="font-black text-[10px] uppercase tracking-widest text-apc-pink mb-4 flex items-center gap-2">
-              <Icons.Ai className="w-4 h-4" /> QA Correction Gate
+              <Icons.Ai className="w-4 h-4" /> QA Correction Gate {project.esCampana && "(MODO CAMPAÑA)"}
             </h3>
-            {project.last_delivery_link && (
-               <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10">
-                 <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Material Entregado:</p>
-                 <a href={project.last_delivery_link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 font-bold underline truncate block">Ver Archivo Externo</a>
-               </div>
+            
+            {project.esCampana ? (
+              <div className="space-y-4 mb-6">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Estado por Área (Agregación QA)</p>
+                <div className="grid grid-cols-1 gap-2">
+                  {(project.areas_seleccionadas || []).map(area => {
+                    const status = project.estadoPorArea?.[area] || 'En Proceso';
+                    return (
+                      <div key={area} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black uppercase">{area}</span>
+                          <span className={`text-[8px] font-bold uppercase ${
+                            status === 'Aprobado QA' ? 'text-emerald-400' :
+                            status === 'En QA' ? 'text-amber-400' :
+                            status === 'Rechazado QA' ? 'text-rose-400' : 'text-slate-500'
+                          }`}>{status}</span>
+                        </div>
+                        {canOperate && status === 'En QA' && (
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => updateAreaStatus(project.id, area, 'Aprobado QA', qaFeedback)}
+                              className="px-3 py-1 bg-emerald-600 text-white text-[8px] font-black rounded uppercase hover:bg-emerald-700"
+                            >
+                              Aprobar
+                            </button>
+                            <button 
+                              onClick={() => {
+                                if (!qaFeedback) { alert("Debe dejar feedback para rechazar."); return; }
+                                updateAreaStatus(project.id, area, 'Rechazado QA', qaFeedback);
+                              }}
+                              className="px-3 py-1 bg-rose-600 text-white text-[8px] font-black rounded uppercase hover:bg-rose-700"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <>
+                {project.last_delivery_link && (
+                  <div className="mb-4 p-3 bg-white/5 rounded-xl border border-white/10">
+                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Material Entregado:</p>
+                    <a href={project.last_delivery_link} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 font-bold underline truncate block">Ver Archivo Externo</a>
+                  </div>
+                )}
+              </>
             )}
+
             <textarea 
-              placeholder="Feedback técnico para el área anterior..."
+              placeholder={project.esCampana ? "Feedback para el área seleccionada..." : "Feedback técnico para el área anterior..."}
               className={`w-full bg-white/10 border rounded-xl p-4 text-xs outline-none font-medium h-24 mb-4 ${isRejecting ? 'border-rose-500' : 'border-white/20'}`}
               value={qaFeedback}
               onChange={(e) => setQaFeedback(e.target.value)}
@@ -1169,7 +1337,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               </label>
             </div>
 
-            {canOperate && (
+            {!project.esCampana && canOperate && (
               <div className="grid grid-cols-1 gap-2">
                 <button 
                   onClick={() => handleQAAction(true)} 
@@ -1388,35 +1556,76 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaborador</label>
-                <select 
-                  value={selectedDelegateId}
-                  onChange={(e) => setSelectedDelegateId(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-apc-pink"
-                >
-                  <option value="">Seleccionar...</option>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaboradores (Selección Múltiple)</label>
+                <div className="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-3 space-y-1 bg-slate-50/50">
                   {(users || [])
                     .filter(u => {
                       const currentStage = (project.etapa_actual || project.etapaActual || '').toUpperCase();
                       const isQA = currentStage.includes('QA') || project.status === 'QA';
-                      if (isQA) return u.department === 'QA' || u.role === UserRole.Correccion || u.role === UserRole.QA_Opera || u.role === UserRole.Medico_Lider || u.role === UserRole.Medico_Opera;
+                      
+                      // Helper to check if user has a role (primary or secondary)
+                      const hasRole = (r: UserRole) => u.role === r || u.roles?.includes(r);
+                      
+                      // Exclude Admins from assignment lists to avoid cluttering operational lists
+                      if (hasRole(UserRole.Admin)) return false;
+
+                      if (isQA) {
+                        return u.department === 'QA' || 
+                               hasRole(UserRole.Correccion) || 
+                               hasRole(UserRole.QA_Opera) || 
+                               hasRole(UserRole.Medico_Lider) || 
+                               hasRole(UserRole.Medico_Opera);
+                      }
+                      
+                      // For other areas, include if department matches OR if they have a leadership role for that area
+                      if (currentStage === 'MÉDICO' && (hasRole(UserRole.Medico_Lider) || hasRole(UserRole.Medico_Opera))) return true;
+                      
                       return u.department === (project.etapa_actual || project.etapaActual);
                     })
                     .map(u => (
-                      <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      <label key={u.id} className="flex items-center gap-3 p-2.5 hover:bg-white hover:shadow-sm rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-200">
+                        <input 
+                          type="checkbox"
+                          checked={selectedDelegateIds.includes(u.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDelegateIds([...selectedDelegateIds, u.id]);
+                            } else {
+                              setSelectedDelegateIds(selectedDelegateIds.filter(id => id !== u.id));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-apc-pink focus:ring-apc-pink"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-black text-slate-700">{u.name}</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{u.role}</span>
+                        </div>
+                      </label>
                     ))
                   }
-                </select>
+                </div>
+                {selectedDelegateIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedDelegateIds.map(id => {
+                      const u = users.find(user => user.id === id);
+                      return (
+                        <span key={id} className="px-2 py-1 bg-apc-pink/10 text-apc-pink text-[9px] font-black rounded-lg border border-apc-pink/20 uppercase">
+                          {u?.name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <button 
                 onClick={handleDelegate}
-                disabled={!selectedDelegateId}
+                disabled={selectedDelegateIds.length === 0}
                 className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
-                  selectedDelegateId ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                  selectedDelegateIds.length > 0 ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
                 }`}
               >
-                Confirmar Delegación
+                Confirmar Delegación ({selectedDelegateIds.length})
               </button>
             </div>
           </div>

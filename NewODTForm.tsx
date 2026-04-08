@@ -24,6 +24,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   const [fechaEntrega, setFechaEntrega] = useState('');
   const [category, setCategory] = useState('');
   const [subCategory, setSubCategory] = useState('');
+  const [detalleEntregableCampaña, setDetalleEntregableCampaña] = useState('');
   const [hasBilling, setHasBilling] = useState(false);
   const [monto, setMonto] = useState(0);
   const [justification, setJustification] = useState('');
@@ -73,6 +74,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         fecha_entrega: fechaEntrega,
         category,
         subCategory,
+        detalleEntregableCampaña: category === 'Campaña' ? detalleEntregableCampaña : '',
         monto_proyectado: hasBilling ? monto : 0,
         justificacion_no_facturado: !hasBilling ? justification : '',
         areas_seleccionadas: selectedAreas,
@@ -138,18 +140,38 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
           <section className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-100">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Canal/categoría</label>
-              <select required value={category} onChange={e => {setCategory(e.target.value); setSubCategory('');}} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-black text-sm">
+              <select required value={category} onChange={e => {
+                const val = e.target.value;
+                setCategory(val); 
+                if (val === 'Campaña') {
+                  setSubCategory('Otro');
+                } else {
+                  setSubCategory('');
+                }
+              }} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-black text-sm">
                 <option value="">Seleccione Canal...</option>
                 {Object.keys(CATEGORIES_CONFIG).map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select>
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de entregable</label>
-              <select required value={subCategory} onChange={e => setSubCategory(e.target.value)} disabled={!category} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-black text-sm disabled:opacity-50">
+              <select required value={subCategory} onChange={e => setSubCategory(e.target.value)} disabled={!category || category === 'Campaña'} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-black text-sm disabled:opacity-50">
                 <option value="">Seleccione Tipo...</option>
                 {category && CATEGORIES_CONFIG[category].map(sub => <option key={sub} value={sub}>{sub}</option>)}
               </select>
             </div>
+            {category === 'Campaña' && (
+              <div className="md:col-span-2 space-y-2 animate-fadeIn">
+                <label className="text-[10px] font-black text-apc-pink uppercase tracking-widest">Detalle del Entregable de Campaña (Obligatorio)</label>
+                <input 
+                  required 
+                  value={detalleEntregableCampaña} 
+                  onChange={e => setDetalleEntregableCampaña(e.target.value)} 
+                  className="w-full px-4 py-3 bg-white border-2 border-apc-pink/20 rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" 
+                  placeholder="Especifique qué entregables incluye esta campaña..." 
+                />
+              </div>
+            )}
           </section>
 
           <section className="space-y-3">

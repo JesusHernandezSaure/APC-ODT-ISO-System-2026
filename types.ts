@@ -21,6 +21,7 @@ export interface User {
   password?: string;
   department: string;
   role: UserRole;
+  roles?: UserRole[];
   active: boolean;
   createdAt?: string;
 }
@@ -36,7 +37,8 @@ export interface ProjectComment {
 
 export interface ProjectAssignment {
   area: string;
-  usuarioId: string;
+  usuarioIds: string[];
+  usuarioId?: string; // Legacy field for backward compatibility
   status: 'pendiente' | 'en_progreso' | 'completado';
 }
 
@@ -81,6 +83,11 @@ export interface Project {
   last_delivery_link?: string;
   last_delivery_comment?: string;
   delivery_history?: { link: string; comment: string; area: string; date: string; authorId: string; authorName: string }[];
+  // Campaign Mode fields
+  esCampana?: boolean;
+  detalleEntregableCampaña?: string;
+  estadoPorArea?: Record<string, 'En Proceso' | 'En QA' | 'Aprobado QA' | 'Rechazado QA'>;
+  client_standby_periods?: { start: string; end?: string }[];
   // New quality control fields
   accounts_approval_ok?: boolean;
   presentation_link?: string;
@@ -165,13 +172,13 @@ export interface ODTContextType {
   updateProjectStatus: (projectId: string, newStatus: Project['status'], comment: string) => Promise<void>;
   updateBrief: (projectId: string, content: string) => Promise<void>;
   processQA: (projectId: string, approved: boolean, feedback: string) => Promise<string | void>;
-  processAccountsReview: (projectId: string, approved: boolean, feedback: string, returnToArea?: string) => Promise<void>;
+  processAccountsReview: (projectId: string, approved: boolean, feedback: string, returnToArea?: string, selectedAreas?: string[]) => Promise<void>;
   submitForPresentation: (projectId: string, link: string, version: string) => Promise<void>;
-  processClientFeedback: (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string) => Promise<void>;
+  processClientFeedback: (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string, selectedAreas?: string[]) => Promise<void>;
   updateBilling: (projectId: string, facturado: boolean, justification?: string) => Promise<void>;
   updatePaymentStatus: (projectId: string, pagado: boolean) => Promise<void>;
   checkSLA: (project: Project) => { isAlert: boolean; reason?: string };
-  delegateProject: (projectId: string, area: string, userId: string) => Promise<void>;
+  delegateProject: (projectId: string, area: string, userIds: string[]) => Promise<void>;
   reassignProjectAndFolder: (projectId: string, clientId: string, newExecutives: string[], portfolio?: boolean) => Promise<void>;
   addClient: (name: string, notes?: string) => Promise<void>;
   updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
@@ -184,6 +191,8 @@ export interface ODTContextType {
   toggleUserStatus: (userId: string, active: boolean) => Promise<void>;
   removeUser: (userId: string) => Promise<void>;
   advanceProjectStage: (projectId: string, comment: string) => Promise<void>;
+  updateAreaStatus: (projectId: string, area: string, newStatus: 'En Proceso' | 'En QA' | 'Aprobado QA' | 'Rechazado QA', comment?: string) => Promise<void>;
+  toggleClientStandby: (projectId: string, active: boolean) => Promise<void>;
   getRoadmapStages: (project: Project) => string[];
   addMaterial: (projectId: string, material: Omit<Material, 'id' | 'creadoPor' | 'fechaCreacion'>) => Promise<void>;
   updateMaterialStatus: (projectId: string, materialId: string, newStatus: Material['estado']) => Promise<void>;

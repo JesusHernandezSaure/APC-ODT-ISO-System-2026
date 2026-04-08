@@ -196,15 +196,18 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const currentAssignment = p.asignaciones?.find(a => a.area === currentArea);
 
           if (currentAssignment) {
-            const alreadyNotified = notifications.some(n => n.userId === currentAssignment.usuarioId && n.projectId === p.id && n.type === 'sla_alert');
-            if (!alreadyNotified) {
-              await createNotification({
-                userId: currentAssignment.usuarioId,
-                title: '⚠️ ALERTA DE SLA (3 DÍAS)',
-                message: `La ODT ${p.id} lleva más de 3 días a tu cargo sin avances.`,
-                type: 'sla_alert',
-                projectId: p.id
-              });
+            const assignedIds = currentAssignment.usuarioIds || (currentAssignment.usuarioId ? [currentAssignment.usuarioId] : []);
+            for (const uid of assignedIds) {
+              const alreadyNotified = notifications.some(n => n.userId === uid && n.projectId === p.id && n.type === 'sla_alert');
+              if (!alreadyNotified) {
+                await createNotification({
+                  userId: uid,
+                  title: '⚠️ ALERTA DE SLA (3 DÍAS)',
+                  message: `La ODT ${p.id} lleva más de 3 días a tu cargo sin avances.`,
+                  type: 'sla_alert',
+                  projectId: p.id
+                });
+              }
             }
           }
 
@@ -259,9 +262,19 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!db || !user) return;
     const projectId = projectData.id;
     if (!projectId) return;
+    const isCampana = projectData.category === 'Campaña';
+    const estadoPorArea: Record<string, string> = {};
+    if (isCampana && projectData.areas_seleccionadas) {
+      projectData.areas_seleccionadas.forEach(area => {
+        estadoPorArea[area] = 'En Proceso';
+      });
+    }
+
     const newProject = {
       ...projectData,
-      status: 'Borrador',
+      esCampana: isCampana,
+      estadoPorArea: isCampana ? estadoPorArea : null,
+      status: isCampana ? 'En Proceso' : 'Borrador',
       current_stage_index: 0,
       etapa_actual: GLOBAL_STAGES.START,
       etapaActual: GLOBAL_STAGES.START,
@@ -269,7 +282,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       comentarios: [
-        { id: `sys-${Date.now()}`, authorId: user.id, authorName: user.name, text: `ODT INICIADA EN ${GLOBAL_STAGES.START.toUpperCase()}`, createdAt: new Date().toISOString(), isSystemEvent: true },
+        { id: `sys-${Date.now()}`, authorId: user.id, authorName: user.name, text: isCampana ? `MODO CAMPAÑA INICIADO: Flujo en Paralelo.` : `ODT INICIADA EN ${GLOBAL_STAGES.START.toUpperCase()}`, createdAt: new Date().toISOString(), isSystemEvent: true },
         ...(projectData.referenceLinks && projectData.referenceLinks.length > 0 ? [{
           id: `ref-${Date.now()}`,
           authorId: user.id,
@@ -338,6 +351,76 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateAreaStatus = async (projectId: string, area: string, newStatus: 'En Proceso' | 'En QA' | 'Aprobado QA' | 'Rechazado QA', comment?: string) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project || !project.esCampana) return;
+
+    const newEstadoPorArea = { ...(project.estadoPorArea || {}) };
+    newEstadoPorArea[area] = newStatus;
+
+    const updates: Record<string, unknown> = {
+      estadoPorArea: newEstadoPorArea,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (comment) {
+      updates.comentarios = [{
+        id: `area-${Date.now()}`,
+        authorId: user.id,
+        authorName: user.name,
+        text: `[${area}] cambió a ${newStatus}. ${comment}`,
+        createdAt: new Date().toISOString(),
+        isSystemEvent: true
+      }, ...(project.comentarios || [])];
+    }
+
+    // Check if all areas are approved
+    const allApproved = Object.values(newEstadoPorArea).every(status => status === 'Aprobado QA');
+    if (allApproved && project.status !== 'Finalizado') {
+      updates.status = 'En Proceso';
+      updates.etapa_actual = GLOBAL_STAGES.CLOSING;
+      updates.etapaActual = GLOBAL_STAGES.CLOSING;
+      const stages = getRoadmapStages(project);
+      updates.current_stage_index = stages.indexOf(GLOBAL_STAGES.CLOSING);
+    }
+
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
+  const toggleClientStandby = async (projectId: string, active: boolean) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const now = new Date().toISOString();
+    const periods = [...(project.client_standby_periods || [])];
+
+    if (active) {
+      periods.push({ start: now });
+    } else {
+      if (periods.length > 0 && !periods[periods.length - 1].end) {
+        periods[periods.length - 1].end = now;
+      }
+    }
+
+    const updates: Record<string, unknown> = {
+      status: active ? 'En revisión con cliente' : 'En Proceso',
+      client_standby_periods: periods,
+      updatedAt: now,
+      comentarios: [{
+        id: `standby-${Date.now()}`,
+        authorId: user.id,
+        authorName: user.name,
+        text: active ? 'ODT puesta en Standby (Revisión Cliente). Cronómetro pausado.' : 'ODT reactivada. Cronómetro reanudado.',
+        createdAt: now,
+        isSystemEvent: true
+      }, ...(project.comentarios || [])]
+    };
+
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
   const advanceProjectStage = async (projectId: string, comment: string) => {
     if (!db || !user) return;
     const project = projects.find(p => p.id === projectId);
@@ -389,14 +472,15 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextLeader = users.find(u => {
       const userDept = normalizeString(u.department || '');
       const normalizedNextArea = normalizeString(nextArea);
+      const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
       
       if (normalizedNextArea.includes('qa')) {
-        return userDept === 'qa' || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider;
+        return userDept === 'qa' || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider);
       }
       if (normalizedNextArea.includes('cuentas')) {
-        return userDept === 'cuentas';
+        return userDept === 'cuentas' || hasRole(u, UserRole.Cuentas_Lider);
       }
-      return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider);
+      return userDept === normalizedNextArea && (hasRole(u, UserRole.Lider_Operativo) || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider));
     });
 
     if (nextLeader) {
@@ -472,14 +556,15 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const nextLeader = users.find(u => {
         const userDept = normalizeString(u.department || '');
         const normalizedNextArea = normalizeString(proximaAreaCalculada);
+        const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
         
         if (normalizedNextArea.includes('qa')) {
-          return userDept === 'qa' || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider;
+          return userDept === 'qa' || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider);
         }
         if (normalizedNextArea.includes('cuentas')) {
-          return userDept === 'cuentas';
+          return userDept === 'cuentas' || hasRole(u, UserRole.Cuentas_Lider);
         }
-        return userDept === normalizedNextArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider);
+        return userDept === normalizedNextArea && (hasRole(u, UserRole.Lider_Operativo) || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider));
       });
 
       if (nextLeader) {
@@ -534,22 +619,31 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Notificación para el responsable de la etapa anterior (quien debe corregir)
       const previousAssignment = project.asignaciones?.find(a => normalizeString(a.area) === normalizeString(areaAnterior));
-      if (previousAssignment && !project.assignedExecutives?.includes(previousAssignment.usuarioId)) {
-        await createNotification({
-          userId: previousAssignment.usuarioId,
-          title: '❌ ODT RECHAZADA POR QA',
-          message: `La ODT ${projectId} ha sido rechazada en QA. Feedback: ${feedback}. Por favor, realiza las correcciones.`,
-          type: 'sla_alert',
-          projectId: projectId
-        });
+      if (previousAssignment) {
+        const assignedIds = previousAssignment.usuarioIds || (previousAssignment.usuarioId ? [previousAssignment.usuarioId] : []);
+        for (const uid of assignedIds) {
+          if (!project.assignedExecutives?.includes(uid)) {
+            await createNotification({
+              userId: uid,
+              title: '❌ ODT RECHAZADA POR QA',
+              message: `La ODT ${projectId} ha sido rechazada en QA. Feedback: ${feedback}. Por favor, realiza las correcciones.`,
+              type: 'sla_alert',
+              projectId: projectId
+            });
+          }
+        }
       }
 
       // Notificación al Líder del Área si contadorCorrecciones >= 2
       if (newRejectionCount >= 2) {
-        const areaLeader = users.find(u => 
-          normalizeString(u.department) === normalizeString(areaAnterior) && 
-          (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider)
-        );
+        const areaLeader = users.find(u => {
+          const userDept = normalizeString(u.department || '');
+          const normalizedArea = normalizeString(areaAnterior);
+          const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+
+          return userDept === normalizedArea && 
+            (hasRole(u, UserRole.Lider_Operativo) || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider));
+        });
         if (areaLeader) {
           await createNotification({
             userId: areaLeader.id,
@@ -565,7 +659,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const processAccountsReview = async (projectId: string, approved: boolean, feedback: string, returnToArea?: string) => {
+  const processAccountsReview = async (projectId: string, approved: boolean, feedback: string, returnToArea?: string, selectedAreas?: string[]) => {
     if (!db || !user) return;
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
@@ -587,26 +681,51 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       await update(ref(db, `projects/${projectId}`), updates);
     } else {
-      const targetArea = returnToArea || stages[project.current_stage_index - 1];
-      const targetIndex = stages.indexOf(targetArea);
-      
-      const updates: Record<string, unknown> = {
-        current_stage_index: targetIndex,
-        etapa_actual: targetArea,
-        etapaActual: targetArea,
-        accounts_approval_ok: false,
-        status: 'Correcciones',
-        updatedAt: new Date().toISOString(),
-        comentarios: [{
-          id: `acc-${Date.now()}`,
-          authorId: user.id,
-          authorName: user.name,
-          text: `CUENTAS: Calidad Rechazada. Regresando a [${targetArea}]. Instrucciones: ${feedback}`,
-          createdAt: new Date().toISOString(),
-          isSystemEvent: true
-        }, ...(project.comentarios || [])]
-      };
-      await update(ref(db, `projects/${projectId}`), updates);
+      if (project.esCampana && selectedAreas && selectedAreas.length > 0) {
+        const newEstadoPorArea = { ...(project.estadoPorArea || {}) };
+        selectedAreas.forEach(area => {
+          newEstadoPorArea[area] = 'En Proceso';
+        });
+        const updates: Record<string, unknown> = {
+          estadoPorArea: newEstadoPorArea,
+          status: 'En Proceso',
+          etapa_actual: 'PRODUCCIÓN PARALELA',
+          etapaActual: 'PRODUCCIÓN PARALELA',
+          current_stage_index: 1,
+          accounts_approval_ok: false,
+          updatedAt: new Date().toISOString(),
+          comentarios: [{
+            id: `acc-${Date.now()}`,
+            authorId: user.id,
+            authorName: user.name,
+            text: `CUENTAS: Calidad Rechazada. MODO CAMPAÑA: Rollback selectivo a [${selectedAreas.join(', ')}]. Instrucciones: ${feedback}`,
+            createdAt: new Date().toISOString(),
+            isSystemEvent: true
+          }, ...(project.comentarios || [])]
+        };
+        await update(ref(db, `projects/${projectId}`), updates);
+      } else {
+        const targetArea = returnToArea || stages[project.current_stage_index - 1];
+        const targetIndex = stages.indexOf(targetArea);
+        
+        const updates: Record<string, unknown> = {
+          current_stage_index: targetIndex,
+          etapa_actual: targetArea,
+          etapaActual: targetArea,
+          accounts_approval_ok: false,
+          status: 'Correcciones',
+          updatedAt: new Date().toISOString(),
+          comentarios: [{
+            id: `acc-${Date.now()}`,
+            authorId: user.id,
+            authorName: user.name,
+            text: `CUENTAS: Calidad Rechazada. Regresando a [${targetArea}]. Instrucciones: ${feedback}`,
+            createdAt: new Date().toISOString(),
+            isSystemEvent: true
+          }, ...(project.comentarios || [])]
+        };
+        await update(ref(db, `projects/${projectId}`), updates);
+      }
 
       // Notificación al Creador/Ejecutivo (Owner)
       if (project.assignedExecutives) {
@@ -633,14 +752,19 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const assignedUser = project.asignaciones?.find(a => a.area === targetArea);
-      if (assignedUser && (!targetLeader || assignedUser.usuarioId !== targetLeader.id)) {
-        await createNotification({
-          userId: assignedUser.usuarioId,
-          title: '⚠️ CORRECCIÓN SOLICITADA POR CUENTAS',
-          message: `Se han solicitado ajustes en la ODT ${projectId} para tu área (${targetArea}). Instrucciones: ${feedback}`,
-          type: 'sla_alert',
-          projectId: projectId
-        });
+      if (assignedUser) {
+        const assignedIds = assignedUser.usuarioIds || (assignedUser.usuarioId ? [assignedUser.usuarioId] : []);
+        for (const uid of assignedIds) {
+          if (!targetLeader || uid !== targetLeader.id) {
+            await createNotification({
+              userId: uid,
+              title: '⚠️ CORRECCIÓN SOLICITADA POR CUENTAS',
+              message: `Se han solicitado ajustes en la ODT ${projectId} para tu área (${targetArea}). Instrucciones: ${feedback}`,
+              type: 'sla_alert',
+              projectId: projectId
+            });
+          }
+        }
       }
     }
   };
@@ -679,7 +803,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await update(ref(db, `projects/${projectId}`), updates);
   };
 
-  const processClientFeedback = async (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string) => {
+  const processClientFeedback = async (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string, selectedAreas?: string[]) => {
     if (!db || !user) return;
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
@@ -714,7 +838,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (nextIndex >= stages.length - 1) updates.fecha_finalizado = new Date().toISOString();
     } else {
       const newCorrectionCount = (project.correction_count_after_presentation || 0) + 1;
-      const newRejectionCount = result === 'rejected' ? (project.client_rejection_count || 0) + 1 : (project.client_rejection_count || 0);
+      const newRejectionCount = (project.client_rejection_count || 0) + 1;
       
       updates.correction_count_after_presentation = newCorrectionCount;
       updates.client_rejection_count = newRejectionCount;
@@ -724,24 +848,46 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         alarmTriggered = true;
       }
 
-      const targetArea = returnToArea || stages[project.current_stage_index - 1];
-      const targetIndex = stages.indexOf(targetArea);
-
-      updates = {
-        ...updates,
-        current_stage_index: targetIndex,
-        etapa_actual: targetArea,
-        etapaActual: targetArea,
-        status: 'Correcciones',
-        comentarios: [{
+      if (project.esCampana && selectedAreas && selectedAreas.length > 0) {
+        // Selective rollback for campaign
+        const newEstadoPorArea = { ...(project.estadoPorArea || {}) };
+        selectedAreas.forEach(area => {
+          newEstadoPorArea[area] = 'En Proceso';
+        });
+        updates.estadoPorArea = newEstadoPorArea;
+        updates.status = 'En Proceso';
+        updates.etapa_actual = 'PRODUCCIÓN PARALELA';
+        updates.etapaActual = 'PRODUCCIÓN PARALELA';
+        updates.current_stage_index = 1; // Back to production phase
+        
+        updates.comentarios = [{
           id: `cf-${Date.now()}`,
           authorId: user.id,
           authorName: user.name,
-          text: `CLIENTE: ${result === 'rejected' ? 'RECHAZADA' : 'Recibe CON correcciones'}. Regresando a [${targetArea}]. Feedback: ${feedback}`,
+          text: `CLIENTE: ${result === 'rejected' ? 'RECHAZADA' : 'Recibe CON correcciones'}. MODO CAMPAÑA: Rollback selectivo a [${selectedAreas.join(', ')}]. Feedback: ${feedback}`,
           createdAt: new Date().toISOString(),
           isSystemEvent: true
-        }, ...(project.comentarios || [])]
-      };
+        }, ...(project.comentarios || [])];
+      } else {
+        const targetArea = returnToArea || stages[project.current_stage_index - 1];
+        const targetIndex = stages.indexOf(targetArea);
+
+        updates = {
+          ...updates,
+          current_stage_index: targetIndex,
+          etapa_actual: targetArea,
+          etapaActual: targetArea,
+          status: 'Correcciones',
+          comentarios: [{
+            id: `cf-${Date.now()}`,
+            authorId: user.id,
+            authorName: user.name,
+            text: `CLIENTE: ${result === 'rejected' ? 'RECHAZADA' : 'Recibe CON correcciones'}. Regresando a [${targetArea}]. Feedback: ${feedback}`,
+            createdAt: new Date().toISOString(),
+            isSystemEvent: true
+          }, ...(project.comentarios || [])]
+        };
+      }
 
       const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
       if (targetLeader) {
@@ -756,7 +902,10 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (alarmTriggered) {
         const involvedUserIds = new Set<string>();
-        project.asignaciones?.forEach(a => involvedUserIds.add(a.usuarioId));
+        project.asignaciones?.forEach(a => {
+          if (a.usuarioIds) a.usuarioIds.forEach(uid => involvedUserIds.add(uid));
+          if (a.usuarioId) involvedUserIds.add(a.usuarioId);
+        });
         project.assignedExecutives?.forEach(id => involvedUserIds.add(id));
         
         for (const uid of involvedUserIds) {
@@ -954,21 +1103,23 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { isAlert: project.status !== 'Finalizado' && hours > 72, reason: hours > 72 ? 'Estancado > 72h' : undefined };
   };
 
-  const delegateProject = async (projectId: string, area: string, userId: string) => {
+  const delegateProject = async (projectId: string, area: string, userIds: string[]) => {
     if (!db || !user) return;
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
-    const newAsignaciones = [...(project.asignaciones || []).filter(a => a.area !== area), { area, usuarioId: userId, status: 'en_progreso' }];
+    const newAsignaciones = [...(project.asignaciones || []).filter(a => a.area !== area), { area, usuarioIds: userIds, status: 'en_progreso' }];
     await update(ref(db, `projects/${projectId}`), { asignaciones: newAsignaciones, updatedAt: new Date().toISOString() });
 
-    // Notificación para el usuario asignado
-    await createNotification({
-      userId: userId,
-      title: '🎯 NUEVA ASIGNACIÓN',
-      message: `Se te ha asignado la ODT ${projectId} para el área de ${area}.`,
-      type: 'assignment',
-      projectId: projectId
-    });
+    // Notificación para los usuarios asignados
+    for (const uid of userIds) {
+      await createNotification({
+        userId: uid,
+        title: '🎯 NUEVA ASIGNACIÓN',
+        message: `Se te ha asignado la ODT ${projectId} para el área de ${area}.`,
+        type: 'assignment',
+        projectId: projectId
+      });
+    }
   };
 
   const reassignProjectAndFolder = async (projectId: string, clientId: string, newExecutives: string[], portfolio: boolean = false) => {
@@ -1113,7 +1264,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!newAsignaciones.find(a => a.area === area)) {
         newAsignaciones.push({
           area,
-          usuarioId: '',
+          usuarioIds: [],
           status: 'pendiente'
         });
       }
@@ -1227,7 +1378,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       addProject, 
       addTraceabilityComment,
-      removeProject, restoreProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, getRoadmapStages,
+      removeProject, restoreProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, 
+      updateAreaStatus, toggleClientStandby, getRoadmapStages,
       updateQAChecklist,
       addMaterial, updateMaterialStatus, updateProjectDate, updateProjectId, updateProjectAreas, fastTrackProject, markNotificationAsRead, clearNotifications
     }}>

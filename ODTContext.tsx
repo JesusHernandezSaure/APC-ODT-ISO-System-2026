@@ -681,11 +681,14 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       await update(ref(db, `projects/${projectId}`), updates);
     } else {
+      let targetArea = returnToArea || stages[project.current_stage_index - 1];
+      
       if (project.esCampana && selectedAreas && selectedAreas.length > 0) {
         const newEstadoPorArea = { ...(project.estadoPorArea || {}) };
         selectedAreas.forEach(area => {
           newEstadoPorArea[area] = 'En Proceso';
         });
+        targetArea = selectedAreas.join(', ');
         const updates: Record<string, unknown> = {
           estadoPorArea: newEstadoPorArea,
           status: 'En Proceso',
@@ -698,14 +701,13 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             id: `acc-${Date.now()}`,
             authorId: user.id,
             authorName: user.name,
-            text: `CUENTAS: Calidad Rechazada. MODO CAMPAÑA: Rollback selectivo a [${selectedAreas.join(', ')}]. Instrucciones: ${feedback}`,
+            text: `CUENTAS: Calidad Rechazada. MODO CAMPAÑA: Rollback selectivo a [${targetArea}]. Instrucciones: ${feedback}`,
             createdAt: new Date().toISOString(),
             isSystemEvent: true
           }, ...(project.comentarios || [])]
         };
         await update(ref(db, `projects/${projectId}`), updates);
       } else {
-        const targetArea = returnToArea || stages[project.current_stage_index - 1];
         const targetIndex = stages.indexOf(targetArea);
         
         const updates: Record<string, unknown> = {
@@ -854,6 +856,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedAreas.forEach(area => {
           newEstadoPorArea[area] = 'En Proceso';
         });
+        const targetArea = selectedAreas.join(', ');
         updates.estadoPorArea = newEstadoPorArea;
         updates.status = 'En Proceso';
         updates.etapa_actual = 'PRODUCCIÓN PARALELA';
@@ -864,10 +867,21 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `cf-${Date.now()}`,
           authorId: user.id,
           authorName: user.name,
-          text: `CLIENTE: ${result === 'rejected' ? 'RECHAZADA' : 'Recibe CON correcciones'}. MODO CAMPAÑA: Rollback selectivo a [${selectedAreas.join(', ')}]. Feedback: ${feedback}`,
+          text: `CLIENTE: ${result === 'rejected' ? 'RECHAZADA' : 'Recibe CON correcciones'}. MODO CAMPAÑA: Rollback selectivo a [${targetArea}]. Feedback: ${feedback}`,
           createdAt: new Date().toISOString(),
           isSystemEvent: true
         }, ...(project.comentarios || [])];
+
+        const targetLeader = users.find(u => selectedAreas.includes(u.department) && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
+        if (targetLeader) {
+          await createNotification({
+            userId: targetLeader.id,
+            title: alarmTriggered ? '🚨 ALARMA CRÍTICA: RECHAZO/CORRECCIÓN CLIENTE' : '⚠️ CORRECCIÓN CLIENTE',
+            message: `La ODT ${projectId} requiere cambios urgentes tras presentación. Áreas: ${targetArea}. Feedback: ${feedback}`,
+            type: 'sla_alert',
+            projectId: projectId
+          });
+        }
       } else {
         const targetArea = returnToArea || stages[project.current_stage_index - 1];
         const targetIndex = stages.indexOf(targetArea);
@@ -887,17 +901,17 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isSystemEvent: true
           }, ...(project.comentarios || [])]
         };
-      }
 
-      const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
-      if (targetLeader) {
-        await createNotification({
-          userId: targetLeader.id,
-          title: alarmTriggered ? '🚨 ALARMA CRÍTICA: RECHAZO/CORRECCIÓN CLIENTE' : '⚠️ CORRECCIÓN CLIENTE',
-          message: `La ODT ${projectId} requiere cambios urgentes tras presentación. Área: ${targetArea}. Feedback: ${feedback}`,
-          type: 'sla_alert',
-          projectId: projectId
-        });
+        const targetLeader = users.find(u => u.department === targetArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
+        if (targetLeader) {
+          await createNotification({
+            userId: targetLeader.id,
+            title: alarmTriggered ? '🚨 ALARMA CRÍTICA: RECHAZO/CORRECCIÓN CLIENTE' : '⚠️ CORRECCIÓN CLIENTE',
+            message: `La ODT ${projectId} requiere cambios urgentes tras presentación. Área: ${targetArea}. Feedback: ${feedback}`,
+            type: 'sla_alert',
+            projectId: projectId
+          });
+        }
       }
 
       if (alarmTriggered) {

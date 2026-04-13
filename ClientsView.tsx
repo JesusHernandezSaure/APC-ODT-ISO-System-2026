@@ -11,7 +11,7 @@ interface ClientsViewProps {
 
 const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   const { user, clients, projects, users, addClient, updateClient, removeClient, reassignProjectAndFolder, checkSLA } = useODT();
-  const { Edit, Trash, Users: UsersIcon, Folder, Plus, ChevronLeft, Clients: ClientsIcon, Ai } = Icons;
+  const { Edit, Trash, Users: UsersIcon, Folder, Plus, ChevronLeft, Clients: ClientsIcon, Ai, Search } = Icons;
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
@@ -21,6 +21,13 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [renamingName, setRenamingName] = useState('');
 
+  // Search and Filter States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterDeliverable, setFilterDeliverable] = useState('');
+  const [filterBrand, setFilterBrand] = useState('');
+
   const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm', message: string, onConfirm?: () => void } | null>(null);
 
   const canCreateClient = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
@@ -28,12 +35,18 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
 
   const filteredClients = useMemo(() => {
     if (!clients || !user) return [];
+    let base = clients;
     // Los ejecutivos operativos del área de cuentas (Cuentas_Opera) solo ven sus carpetas asignadas
     if (user.role === UserRole.Cuentas_Opera) {
-      return clients.filter(c => c.assignedExecutives?.includes(user.id));
+      base = clients.filter(c => c.assignedExecutives?.includes(user.id));
     }
-    return clients;
-  }, [clients, user]);
+    
+    if (searchTerm) {
+      base = base.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    }
+    
+    return base;
+  }, [clients, user, searchTerm]);
 
   const accountsUsers = useMemo(() => 
     (users || []).filter(u => {
@@ -121,13 +134,39 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   }
 
   if (viewingClient) {
-    const clientODTs = (projects || []).filter(p => p.clientId === viewingClient.id);
+    const allClientODTs = (projects || []).filter(p => p.clientId === viewingClient.id);
+    
+    const categories = Array.from(new Set(allClientODTs.map(p => p.category).filter(Boolean))).sort();
+    const subCategories = Array.from(new Set(allClientODTs.map(p => p.subCategory).filter(Boolean))).sort();
+    const brands = Array.from(new Set(allClientODTs.map(p => p.marca).filter(Boolean))).sort();
+
+    const filteredODTs = allClientODTs.filter(p => {
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery || 
+        (p.empresa || '').toLowerCase().includes(searchLower) || 
+        (p.id || '').toLowerCase().includes(searchLower) ||
+        (p.marca || '').toLowerCase().includes(searchLower) ||
+        (p.producto || '').toLowerCase().includes(searchLower) ||
+        (p.subCategory || '').toLowerCase().includes(searchLower);
+        
+      const matchesCategory = !filterCategory || p.category === filterCategory;
+      const matchesDeliverable = !filterDeliverable || p.subCategory === filterDeliverable;
+      const matchesBrand = !filterBrand || p.marca === filterBrand;
+      return matchesSearch && matchesCategory && matchesDeliverable && matchesBrand;
+    });
+
     return (
       <div className="space-y-6 animate-fadeIn">
         <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div>
             <button 
-              onClick={() => setViewingClient(null)}
+              onClick={() => {
+                setViewingClient(null);
+                setSearchQuery('');
+                setFilterCategory('');
+                setFilterDeliverable('');
+                setFilterBrand('');
+              }}
               className="text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-widest flex items-center gap-2 mb-2 transition-colors"
             >
               <ChevronLeft /> VOLVER A CARPETAS
@@ -139,25 +178,88 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
             </p>
           </div>
           
-          <button 
-            onClick={() => setCreatingODTForClient(viewingClient)}
-            className="flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-lg shadow-apc-green/20"
-          >
-            <Plus /> NUEVA ODT
-          </button>
+          <div className="flex flex-col sm:flex-row items-center gap-4 flex-1 max-w-4xl">
+            <div className="flex-1 w-full bg-gray-50 p-2 rounded-xl border border-gray-200 flex flex-wrap gap-2">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input 
+                  type="text"
+                  placeholder="Buscar por nombre o ID..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
+                />
+              </div>
+
+              <select 
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
+              >
+                <option value="">Todas las Categorías</option>
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+
+              <select 
+                value={filterDeliverable}
+                onChange={(e) => setFilterDeliverable(e.target.value)}
+                className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
+              >
+                <option value="">Todos los Entregables</option>
+                {subCategories.map(sub => (
+                  <option key={sub} value={sub}>{sub}</option>
+                ))}
+              </select>
+
+              <select 
+                value={filterBrand}
+                onChange={(e) => setFilterBrand(e.target.value)}
+                className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
+              >
+                <option value="">Todas las Marcas</option>
+                {brands.map(brand => (
+                  <option key={brand} value={brand}>{brand}</option>
+                ))}
+              </select>
+            </div>
+
+            <button 
+              onClick={() => setCreatingODTForClient(viewingClient)}
+              className="flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-lg shadow-apc-green/20 whitespace-nowrap"
+            >
+              <Plus /> NUEVA ODT
+            </button>
+          </div>
         </header>
 
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-xl">
-           {clientODTs.length === 0 ? (
+           {filteredODTs.length === 0 ? (
              <div className="text-center py-20">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
                    <Folder />
                 </div>
-                <p className="text-slate-400 italic font-medium">Esta carpeta está vacía. No hay ODTs registradas.</p>
+                <p className="text-slate-400 italic font-medium">
+                  {allClientODTs.length === 0 ? "Esta carpeta está vacía. No hay ODTs registradas." : "No se encontraron ODTs con los filtros seleccionados."}
+                </p>
+                {(searchQuery || filterCategory || filterDeliverable || filterBrand) && (
+                  <button 
+                    onClick={() => {
+                      setSearchQuery('');
+                      setFilterCategory('');
+                      setFilterDeliverable('');
+                      setFilterBrand('');
+                    }}
+                    className="mt-4 text-apc-pink font-black text-xs uppercase tracking-widest hover:underline"
+                  >
+                    Limpiar filtros
+                  </button>
+                )}
              </div>
            ) : (
              <ProjectTable 
-               projects={clientODTs} 
+               projects={filteredODTs} 
                onView={(id: string) => onViewProject && onViewProject(id)} 
                checkSLA={checkSLA} 
                users={users}
@@ -182,15 +284,28 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
             Gestión de Carpetas Maestras ISO 9001
           </p>
         </div>
-        
-        {canCreateClient && (
-          <button 
-            onClick={() => setIsCreatingClient(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-lg shadow-apc-green/20"
-          >
-            <Plus /> NUEVA CARPETA DE CLIENTE
-          </button>
-        )}
+
+        <div className="flex flex-col sm:flex-row items-center gap-4 flex-1 max-w-2xl justify-end">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+            <input 
+              type="text"
+              placeholder="Buscar cliente por nombre..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-xl font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all shadow-sm"
+            />
+          </div>
+          
+          {canCreateClient && (
+            <button 
+              onClick={() => setIsCreatingClient(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-lg shadow-apc-green/20 whitespace-nowrap"
+            >
+              <Plus /> NUEVA CARPETA DE CLIENTE
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

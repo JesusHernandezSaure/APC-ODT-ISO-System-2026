@@ -957,7 +957,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             let responsibleUsers: User[] = [];
             let isLeaderDisplay = false;
 
-            if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
+            // NEW LOGIC: If stage is Cuentas or Administración, the responsible is the Executive (Owner)
+            const isAccountsStage = targetArea.toUpperCase().includes('CUENTAS') || targetArea.toUpperCase().includes('ADMINISTRACIÓN');
+            
+            if (isAccountsStage && project.assignedExecutives && project.assignedExecutives.length > 0) {
+              responsibleUsers = users.filter(u => project.assignedExecutives?.includes(u.id));
+            } else if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
               responsibleUsers = users.filter(u => assignment.usuarioIds.includes(u.id));
             } else if (assignment && assignment.usuarioId) {
               // Backward compatibility for single ID

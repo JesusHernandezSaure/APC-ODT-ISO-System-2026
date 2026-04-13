@@ -36,7 +36,12 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
           const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
           let responsibleUsers: User[] = [];
           
-          if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
+          // NEW LOGIC: If stage is Cuentas or Administración, the responsible is the Executive (Owner)
+          const isAccountsStage = targetArea.toUpperCase().includes('CUENTAS') || targetArea.toUpperCase().includes('ADMINISTRACIÓN');
+
+          if (isAccountsStage && p.assignedExecutives && p.assignedExecutives.length > 0) {
+            responsibleUsers = users.filter((u: User) => p.assignedExecutives?.includes(u.id));
+          } else if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
             responsibleUsers = users.filter((u: User) => assignment.usuarioIds.includes(u.id));
           } else if (assignment && assignment.usuarioId) {
             const u = users.find((u: User) => u.id === assignment.usuarioId);

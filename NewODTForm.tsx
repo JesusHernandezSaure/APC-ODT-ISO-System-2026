@@ -16,6 +16,13 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   const { projects, addProject } = useODT();
   const [loading, setLoading] = useState(false);
 
+  const existingBrands = Array.from(new Set(
+    (projects || [])
+      .filter(p => p.clientId === client.id)
+      .map(p => p.marca)
+      .filter(Boolean)
+  )).sort();
+
   // Form State
   const [odtId, setOdtId] = useState('');
   const [clientName, setClientName] = useState(client.name);
@@ -122,7 +129,19 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
           <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Marca o Producto</label>
-              <input required value={marca} onChange={e => setMarca(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" placeholder="Ejem: Roche, Pfizer..." />
+              <input 
+                required 
+                list="client-brands"
+                value={marca} 
+                onChange={e => setMarca(e.target.value)} 
+                className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" 
+                placeholder="Ejem: Roche, Pfizer..." 
+              />
+              <datalist id="client-brands">
+                {existingBrands.map(b => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre de campaña o servicio</label>

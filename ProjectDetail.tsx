@@ -34,6 +34,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     updateProjectId,
     updateProjectAreas,
     fastTrackProject,
+    earlyCloseProject,
     reassignProjectAndFolder,
     updateAreaStatus,
     toggleClientStandby
@@ -60,6 +61,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showAreasModal, setShowAreasModal] = useState(false);
   const [showFastTrackModal, setShowFastTrackModal] = useState(false);
+  const [showEarlyCloseModal, setShowEarlyCloseModal] = useState(false);
+  const [earlyCloseMotivo, setEarlyCloseMotivo] = useState('Cambio mínimo entregado a cliente');
+  const [earlyCloseExplicacion, setEarlyCloseExplicacion] = useState('');
+  const [earlyCloseLink, setEarlyCloseLink] = useState('');
   const [fastTrackJustification, setFastTrackJustification] = useState('');
   const [fastTrackDestination, setFastTrackDestination] = useState('');
   const [selectedAreasForEdit, setSelectedAreasForEdit] = useState<string[]>(project.areas_seleccionadas || []);
@@ -933,6 +938,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       </div>
 
       <div className="w-full lg:w-80 space-y-6">
+        {/* Early Close Button */}
+        {isAccountOwnerOrLeader && project.status !== 'Finalizado' && (
+          <button 
+            onClick={() => setShowEarlyCloseModal(true)}
+            className="w-full py-3 bg-white border border-red-300 text-red-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+          >
+            <Icons.Check className="w-4 h-4" /> Cerrar Proceso (Anticipado)
+          </button>
+        )}
+
         {/* Current Responsible Info */}
         <div className="bg-white p-6 rounded-3xl border shadow-sm">
           <div className="flex justify-between items-center mb-3 border-b pb-2">
@@ -1917,6 +1932,184 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 className="flex-1 py-3 bg-amber-500 text-white font-black text-[10px] rounded-xl hover:bg-amber-600 uppercase tracking-widest transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:grayscale"
               >
                 Ejecutar Redirección
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showEarlyCloseModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                <Icons.Check className="text-red-500" /> Confirmar Cierre Anticipado
+              </h2>
+              <button onClick={() => setShowEarlyCloseModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <Icons.X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6">
+              <p className="text-[10px] text-red-700 font-bold leading-relaxed">
+                <span className="block mb-1 uppercase tracking-widest">⚠️ Bypass de Ruta</span>
+                Esta acción cerrará la ODT anticipadamente, omitiendo las etapas restantes. Se requiere evidencia de la entrega al cliente.
+              </p>
+            </div>
+
+            <div className="space-y-4 mb-8">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Motivo</label>
+                <select 
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none font-bold focus:border-red-400 transition-colors"
+                  value={earlyCloseMotivo}
+                  onChange={(e) => setEarlyCloseMotivo(e.target.value)}
+                >
+                  <option value="Cambio mínimo entregado a cliente">Cambio mínimo entregado a cliente</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
+
+              {earlyCloseMotivo === 'Otro' && (
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Explicación</label>
+                  <textarea 
+                    required
+                    placeholder="Explica el motivo del cierre..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs outline-none font-medium h-24 focus:border-red-400 transition-colors"
+                    value={earlyCloseExplicacion}
+                    onChange={(e) => setEarlyCloseExplicacion(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Link de Evidencia (Entregable)</label>
+                <input 
+                  type="url"
+                  required
+                  placeholder="https://..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none font-bold focus:border-red-400 transition-colors"
+                  value={earlyCloseLink}
+                  onChange={(e) => setEarlyCloseLink(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowEarlyCloseModal(false)}
+                className="flex-1 py-3 bg-slate-100 text-slate-600 font-black text-[10px] rounded-xl hover:bg-slate-200 uppercase tracking-widest transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                disabled={!earlyCloseLink || (earlyCloseMotivo === 'Otro' && !earlyCloseExplicacion)}
+                onClick={async () => {
+                  try {
+                    await earlyCloseProject(project.id, {
+                      motivo: earlyCloseMotivo,
+                      explicacion: earlyCloseMotivo === 'Otro' ? earlyCloseExplicacion : undefined,
+                      linkEvidencia: earlyCloseLink
+                    });
+                    setShowEarlyCloseModal(false);
+                    setDialog({ type: 'alert', message: "Cierre anticipado procesado exitosamente." });
+                  } catch {
+                    setDialog({ type: 'alert', message: "Error al procesar el cierre anticipado." });
+                  }
+                }}
+                className="flex-1 py-3 bg-red-600 text-white font-black text-[10px] rounded-xl hover:bg-red-700 uppercase tracking-widest transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:grayscale"
+              >
+                Confirmar Cierre
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showEarlyCloseModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                <Icons.Check className="text-red-500" /> Confirmar Cierre Anticipado
+              </h2>
+              <button onClick={() => setShowEarlyCloseModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                <Icons.X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6">
+              <p className="text-[10px] text-red-700 font-bold leading-relaxed">
+                <span className="block mb-1 uppercase tracking-widest">⚠️ Bypass de Ruta</span>
+                Esta acción cerrará la ODT anticipadamente, omitiendo las etapas restantes. Se requiere evidencia de la entrega al cliente.
+              </p>
+            </div>
+
+            <div className="space-y-4 mb-8">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Motivo</label>
+                <select 
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none font-bold focus:border-red-400 transition-colors"
+                  value={earlyCloseMotivo}
+                  onChange={(e) => setEarlyCloseMotivo(e.target.value)}
+                >
+                  <option value="Cambio mínimo entregado a cliente">Cambio mínimo entregado a cliente</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
+
+              {earlyCloseMotivo === 'Otro' && (
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Explicación</label>
+                  <textarea 
+                    required
+                    placeholder="Explica el motivo del cierre..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs outline-none font-medium h-24 focus:border-red-400 transition-colors"
+                    value={earlyCloseExplicacion}
+                    onChange={(e) => setEarlyCloseExplicacion(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Link de Evidencia (Entregable)</label>
+                <input 
+                  type="url"
+                  required
+                  placeholder="https://..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none font-bold focus:border-red-400 transition-colors"
+                  value={earlyCloseLink}
+                  onChange={(e) => setEarlyCloseLink(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowEarlyCloseModal(false)}
+                className="flex-1 py-3 bg-slate-100 text-slate-600 font-black text-[10px] rounded-xl hover:bg-slate-200 uppercase tracking-widest transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                disabled={!earlyCloseLink || (earlyCloseMotivo === 'Otro' && !earlyCloseExplicacion)}
+                onClick={async () => {
+                  try {
+                    await earlyCloseProject(project.id, {
+                      motivo: earlyCloseMotivo,
+                      explicacion: earlyCloseMotivo === 'Otro' ? earlyCloseExplicacion : undefined,
+                      linkEvidencia: earlyCloseLink
+                    });
+                    setShowEarlyCloseModal(false);
+                    setDialog({ type: 'alert', message: "Cierre anticipado procesado exitosamente." });
+                  } catch {
+                    setDialog({ type: 'alert', message: "Error al procesar el cierre anticipado." });
+                  }
+                }}
+                className="flex-1 py-3 bg-red-600 text-white font-black text-[10px] rounded-xl hover:bg-red-700 uppercase tracking-widest transition-all shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:grayscale"
+              >
+                Confirmar Cierre
               </button>
             </div>
           </div>

@@ -1370,6 +1370,41 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const earlyCloseProject = async (projectId: string, data: { motivo: string; explicacion?: string; linkEvidencia: string }) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const stages = getRoadmapStages(project);
+    const billingStage = GLOBAL_STAGES.BILLING;
+    const billingIndex = stages.indexOf(billingStage);
+
+    const updates: Record<string, unknown> = {
+      cierreAnticipado: {
+        motivo: data.motivo,
+        explicacion: data.explicacion || '',
+        linkEvidencia: data.linkEvidencia,
+        fecha: new Date().toISOString(),
+        usuarioUID: user.id
+      },
+      current_stage_index: billingIndex !== -1 ? billingIndex : stages.length - 1,
+      etapa_actual: billingStage,
+      etapaActual: billingStage,
+      status: 'Pendiente de pago',
+      updatedAt: new Date().toISOString(),
+      comentarios: [{
+        id: `early-close-${Date.now()}`,
+        authorId: user.id,
+        authorName: user.name,
+        text: `El ejecutivo ${user.name} ha cerrado anticipadamente este proceso. Motivo: ${data.motivo}${data.explicacion ? ` - ${data.explicacion}` : ''}. Enlace entregado: ${data.linkEvidencia}`,
+        createdAt: new Date().toISOString(),
+        isSystemEvent: true
+      }, ...(project.comentarios || [])]
+    };
+
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
   return (
     <ODTContext.Provider value={{ 
       user, projects, deletedProjects, clients, users, notifications, loading, isInitialLoad, login, logout, 
@@ -1405,7 +1440,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       removeProject, restoreProject, manageUser, toggleUserStatus, removeUser, advanceProjectStage, 
       updateAreaStatus, toggleClientStandby, getRoadmapStages,
       updateQAChecklist,
-      addMaterial, updateMaterialStatus, updateProjectDate, updateProjectId, updateProjectAreas, fastTrackProject, markNotificationAsRead, clearNotifications
+      addMaterial, updateMaterialStatus, updateProjectDate, updateProjectId, updateProjectAreas, fastTrackProject, earlyCloseProject, markNotificationAsRead, clearNotifications
     }}>
       {children}
     </ODTContext.Provider>

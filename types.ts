@@ -104,6 +104,13 @@ export interface Project {
   deletedByName?: string;
   deletedAt?: string;
   deletionReason?: string;
+  cierreAnticipado?: {
+    motivo: string;
+    explicacion?: string;
+    linkEvidencia: string;
+    fecha: string;
+    usuarioUID: string;
+  };
   qaChecklist?: {
     medica: boolean;
     estilo: boolean;
@@ -201,6 +208,7 @@ export interface ODTContextType {
   updateProjectId: (oldId: string, newId: string) => Promise<void>;
   updateProjectAreas: (projectId: string, newAreas: string[]) => Promise<void>;
   fastTrackProject: (projectId: string, destinationStage: string, justification: string) => Promise<void>;
+  earlyCloseProject: (projectId: string, data: { motivo: string; explicacion?: string; linkEvidencia: string }) => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   clearNotifications: () => Promise<void>;
 }

@@ -89,6 +89,17 @@
     font-size: 14px;
   }
 
+  .ql-editor img {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+  
+  .ql-editor table {
+    max-width: 100% !important;
+    overflow-x: auto;
+    display: block;
+  }
+
   /* Custom Scrollbar */
   .custom-scrollbar::-webkit-scrollbar {
     width: 4px;

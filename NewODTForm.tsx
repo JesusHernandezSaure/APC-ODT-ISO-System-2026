@@ -6,6 +6,7 @@ import { useODT } from './ODTContext';
 import { Client, Project } from './types';
 import { Icons } from './constants';
 import { OPERATIVE_AREAS, CATEGORIES_CONFIG } from './workflowConfig';
+import { structureBrief } from './services/geminiService';
 
 interface NewODTFormProps {
   client: Client;
@@ -15,6 +16,7 @@ interface NewODTFormProps {
 const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   const { projects, addProject } = useODT();
   const [loading, setLoading] = useState(false);
+  const [isFormatting, setIsFormatting] = useState(false);
 
   const existingBrands = Array.from(new Set(
     (projects || [])
@@ -62,6 +64,30 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
     setSelectedAreas(prev => 
       prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
     );
+  };
+
+  const handleStructureBrief = async () => {
+    if (!brief || brief === '<p><br></p>') {
+      alert("El brief está vacío. Escribe algo antes de estructurarlo.");
+      return;
+    }
+    
+    setIsFormatting(true);
+    try {
+      const structured = await structureBrief(brief);
+      if (structured) {
+        const separator = '<hr/><br/><h3>✨ Propuesta Estructurada por IA</h3><br/>';
+        setBrief(prev => prev + separator + structured);
+        alert("Brief estructurado exitosamente. Revisa la propuesta al final del documento.");
+      } else {
+        alert("No se pudo estructurar el brief en este momento.");
+      }
+    } catch (error) {
+      console.error("Error structuring brief:", error);
+      alert("Ocurrió un error al procesar el brief con IA.");
+    } finally {
+      setIsFormatting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -237,6 +263,25 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
              </div>
              <div className="bg-white rounded-xl border">
                <ReactQuill theme="snow" value={brief} onChange={setBrief} className="h-64 mb-12" />
+               <div className="p-3 border-t flex justify-end">
+                 <button 
+                   type="button"
+                   onClick={handleStructureBrief}
+                   disabled={isFormatting}
+                   className="px-4 py-2 bg-slate-100 text-slate-700 text-[10px] font-black rounded-lg hover:bg-slate-200 transition-all uppercase tracking-widest flex items-center gap-2 disabled:opacity-50"
+                 >
+                   {isFormatting ? (
+                     <>
+                       <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                       Procesando con IA...
+                     </>
+                   ) : (
+                     <>
+                       <span>✨ Estructurar Brief</span>
+                     </>
+                   )}
+                 </button>
+               </div>
              </div>
 
              <div className="space-y-3 pt-6">

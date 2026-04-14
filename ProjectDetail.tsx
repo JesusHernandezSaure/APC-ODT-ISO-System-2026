@@ -683,7 +683,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
               <Icons.Project className="text-apc-green" /> Brief Maestro APC
             </h3>
-            {isAccountOwnerOrLeader && (
+            {canEditBrief && (
               <button onClick={() => {
                 updateBrief(project.id, briefContent);
                 setDialog({ type: 'alert', message: "Brief Maestro guardado exitosamente." });

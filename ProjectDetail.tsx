@@ -129,9 +129,15 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     if (isQAStage) {
       const isQaLider = hasRole(user, UserRole.Correccion);
       const isQaOperaAssigned = hasRole(user, UserRole.QA_Opera) && project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
-      const isMedicalLider = hasRole(user, UserRole.Medico_Lider);
-      const isMedicalOperaAssigned = hasRole(user, UserRole.Medico_Opera) && project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
-      return isQaLider || isQaOperaAssigned || isMedicalLider || isMedicalOperaAssigned;
+      
+      // Si es una etapa de QA Médico, permitir a roles médicos o al líder de QA
+      if (currentStageName?.includes('Médico')) {
+        const isMedicalLider = hasRole(user, UserRole.Medico_Lider);
+        const isMedicalOperaAssigned = hasRole(user, UserRole.Medico_Opera) && project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
+        return isQaLider || isMedicalLider || isMedicalOperaAssigned;
+      }
+      
+      return isQaLider || isQaOperaAssigned;
     }
     
     if (isProductionStage) {
@@ -147,7 +153,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       }
 
       const isAreaLead = (hasRole(user, UserRole.Lider_Operativo) || hasRole(user, UserRole.Medico_Lider)) && user.department === currentArea;
-      const isDirectlyAssigned = project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
+      const isDirectlyAssigned = project.asignaciones?.some(a => (a.usuarioIds?.includes(user.id) || a.usuarioId === user.id) && a.area === currentArea);
       return isAreaLead || isDirectlyAssigned;
     }
 
@@ -403,7 +409,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   };
 
   const getButtonLabel = () => {
-    if (isInitialStage) return `VALIDAR BRIEFING Y ENVIAR A ${roadmapStages[1]}`;
+    if (isInitialStage) {
+      return project.esCampana 
+        ? "VALIDAR BRIEFING Y ENVIAR A PRODUCCIÓN PARALELA" 
+        : `VALIDAR BRIEFING Y ENVIAR A ${roadmapStages[1] || 'PRODUCCIÓN'}`;
+    }
     if (nextStageName?.includes('REVISIÓN QA')) return "ENVIAR A REVISIÓN QA";
     return "COMPLETAR ETAPA TÉCNICA";
   };
@@ -1374,14 +1384,26 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             )}
           </div>
           <div className="relative space-y-8">
-            {(!roadmapStages || roadmapStages.length === 0) ? (
-              <p className="text-center text-slate-400 text-xs italic py-4">No hay áreas asignadas para esta ruta.</p>
+            {(!roadmapStages || roadmapStages.length <= 3) ? (
+              <p className="text-center text-slate-400 text-[10px] italic py-4 font-medium">No hay áreas operativas asignadas para esta ruta.</p>
             ) : (
               <>
                 <div className="absolute top-0 left-[14px] w-0.5 h-full bg-slate-100 -z-0"></div>
                 {(roadmapStages || []).map((stage, idx) => {
-                  const isActive = idx === currentIdx;
-                  const isCompleted = idx < currentIdx;
+                  let isActive = idx === currentIdx;
+                  let isCompleted = idx < currentIdx;
+                  
+                  // En modo campaña, todas las áreas operativas se muestran como activas si estamos en etapa de producción
+                  if (project.esCampana && isProductionStage) {
+                    const isOperativeArea = (OPERATIVE_AREAS as readonly string[]).includes(stage);
+                    if (isOperativeArea) {
+                      isActive = true;
+                      isCompleted = false;
+                    }
+                  }
+
+                  const areaStatus = project.esCampana ? project.estadoPorArea?.[stage] : null;
+
                   return (
                     <div key={idx} className="flex gap-4 items-start relative z-10">
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all shrink-0 ${
@@ -1392,10 +1414,21 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                         {isActive && <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-[10px] font-black uppercase tracking-tighter leading-tight mt-1 ${isActive ? 'text-apc-pink' : isCompleted ? 'text-emerald-600' : 'text-slate-300'}`}>
-                          {stage}
-                        </p>
-                        {isActive && (
+                        <div className="flex justify-between items-start">
+                          <p className={`text-[10px] font-black uppercase tracking-tighter leading-tight mt-1 ${isActive ? 'text-apc-pink' : isCompleted ? 'text-emerald-600' : 'text-slate-300'}`}>
+                            {stage}
+                          </p>
+                          {areaStatus && (
+                            <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase ${
+                              areaStatus === 'Aprobado QA' ? 'bg-emerald-100 text-emerald-600' :
+                              areaStatus === 'En QA' ? 'bg-amber-100 text-amber-600' :
+                              areaStatus === 'Rechazado QA' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'
+                            }`}>
+                              {areaStatus}
+                            </span>
+                          )}
+                        </div>
+                        {isActive && !areaStatus && (
                           <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Etapa Actual</p>
                         )}
                       </div>

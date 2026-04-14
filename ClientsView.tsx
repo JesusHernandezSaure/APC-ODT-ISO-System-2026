@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useODT } from './ODTContext';
 import { UserRole, Client } from './types';
 import { Icons } from './constants';
@@ -14,19 +15,48 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   const { Edit, Trash, Users: UsersIcon, Folder, Plus, ChevronLeft, Clients: ClientsIcon, Ai, Search } = Icons;
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientName, setNewClientName] = useState('');
-  const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [creatingODTForClient, setCreatingODTForClient] = useState<Client | null>(null);
   const [transferClient, setTransferClient] = useState<Client | null>(null);
   const [targetOwners, setTargetOwners] = useState<string[]>([]);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [renamingName, setRenamingName] = useState('');
 
-  // Search and Filter States
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterDeliverable, setFilterDeliverable] = useState('');
-  const [filterBrand, setFilterBrand] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Search and Filter States from URL
+  const searchTerm = searchParams.get('search') || '';
+  const searchQuery = searchParams.get('q') || '';
+  const filterCategory = searchParams.get('cat') || '';
+  const filterDeliverable = searchParams.get('sub') || '';
+  const filterBrand = searchParams.get('brand') || '';
+  const clientIdParam = searchParams.get('client') || '';
+
+  const viewingClient = useMemo(() => 
+    clientIdParam ? clients.find(c => c.id === clientIdParam) || null : null
+  , [clientIdParam, clients]);
+
+  const updateSearchParam = (key: string, value: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value) {
+        next.set(key, value);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    }, { replace: true });
+  };
+
+  const clearODTFilters = () => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('q');
+      next.delete('cat');
+      next.delete('sub');
+      next.delete('brand');
+      return next;
+    }, { replace: true });
+  };
 
   const [dialog, setDialog] = useState<{ type: 'alert' | 'confirm', message: string, onConfirm?: () => void } | null>(null);
 
@@ -161,11 +191,8 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
           <div>
             <button 
               onClick={() => {
-                setViewingClient(null);
-                setSearchQuery('');
-                setFilterCategory('');
-                setFilterDeliverable('');
-                setFilterBrand('');
+                updateSearchParam('client', '');
+                clearODTFilters();
               }}
               className="text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-widest flex items-center gap-2 mb-2 transition-colors"
             >
@@ -186,14 +213,14 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                   type="text"
                   placeholder="Buscar por nombre o ID..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => updateSearchParam('q', e.target.value)}
                   className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
                 />
               </div>
 
               <select 
                 value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
+                onChange={(e) => updateSearchParam('cat', e.target.value)}
                 className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
               >
                 <option value="">Todas las Categorías</option>
@@ -204,7 +231,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
 
               <select 
                 value={filterDeliverable}
-                onChange={(e) => setFilterDeliverable(e.target.value)}
+                onChange={(e) => updateSearchParam('sub', e.target.value)}
                 className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
               >
                 <option value="">Todos los Entregables</option>
@@ -215,7 +242,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
 
               <select 
                 value={filterBrand}
-                onChange={(e) => setFilterBrand(e.target.value)}
+                onChange={(e) => updateSearchParam('brand', e.target.value)}
                 className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all"
               >
                 <option value="">Todas las Marcas</option>
@@ -245,12 +272,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                 </p>
                 {(searchQuery || filterCategory || filterDeliverable || filterBrand) && (
                   <button 
-                    onClick={() => {
-                      setSearchQuery('');
-                      setFilterCategory('');
-                      setFilterDeliverable('');
-                      setFilterBrand('');
-                    }}
+                    onClick={clearODTFilters}
                     className="mt-4 text-apc-pink font-black text-xs uppercase tracking-widest hover:underline"
                   >
                     Limpiar filtros
@@ -292,7 +314,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
               type="text"
               placeholder="Buscar cliente por nombre..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => updateSearchParam('search', e.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-xl font-bold focus:border-apc-pink focus:ring-2 focus:ring-apc-pink/20 outline-none transition-all shadow-sm"
             />
           </div>
@@ -393,7 +415,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                 </div>
 
                 <button 
-                  onClick={() => setViewingClient(client)}
+                  onClick={() => updateSearchParam('client', client.id)}
                   className="w-full py-3 bg-slate-50 text-slate-900 font-black text-[10px] uppercase tracking-widest rounded-xl border border-slate-100 hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center gap-2"
                 >
                   <Folder /> VER ODTs DEL CLIENTE

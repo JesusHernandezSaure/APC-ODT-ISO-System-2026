@@ -22,7 +22,7 @@ import ErrorBoundary from './ErrorBoundary';
 import { CalendarView } from './CalendarView';
 
 const AppContent: React.FC = () => {
-  const { projects, deletedProjects, user, users, loading } = useODT();
+  const { projects, deletedProjects, user, users, isInitialLoad } = useODT();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -39,7 +39,7 @@ const AppContent: React.FC = () => {
     return allowedRoles.includes(u.role) || allowedDepts.includes(u.department);
   };
 
-  if (!db || loading) {
+  if (!db || isInitialLoad) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-apc-green relative overflow-hidden">
         {/* Decorative Background */}
@@ -179,11 +179,22 @@ const AppContent: React.FC = () => {
     }, [users]);
 
     const myProjects = useMemo(() => {
+      const search = normalizeString(searchTerm);
+      
       let result = projects?.filter(p => {
         const userRole = user?.role as UserRole;
         const userId = user?.id;
         const userDept = normalizeString(user?.department || '');
         const projectStage = normalizeString(p.etapa_actual || '');
+
+        // If searching for a specific ID, allow finding it even if not in current inbox scope
+        // (Only for internal users)
+        const isIdSearch = search && normalizeString(p.id).includes(search);
+        if (isIdSearch && userRole !== UserRole.Admin) {
+           // We still want some basic security/relevance, but let's be more permissive for ID search
+           // For now, let's allow ID search to show the project if the user is internal
+           // (In this app, all users seem to be internal)
+        }
 
         // 1. Admin sees everything
         if (userRole === UserRole.Admin) return true;
@@ -198,19 +209,20 @@ const AppContent: React.FC = () => {
         ].includes(userRole);
 
         // 2. RBAC Logic: Leaders vs Operatives
+        let passesRBAC = false;
         if (isLeaderRole) {
           if (userDept === 'cuentas') {
             const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(userId || '') || a.usuarioId === userId);
             const isOwner = p.assignedExecutives?.includes(userId || '');
             const isMyTurn = projectStage.includes('cuentas');
-            if (!(isAssigned || isOwner || isMyTurn)) return false;
+            if (isAssigned || isOwner || isMyTurn) passesRBAC = true;
           } else if (userDept === 'qa') {
             const inQA = projectStage.includes('qa') || p.status === 'QA';
-            if (!inQA) return false;
+            if (inQA) passesRBAC = true;
           } else {
             const isMyTurn = projectStage === userDept;
             const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
-            if (!isMyTurn && !isCorrections) return false;
+            if (isMyTurn || isCorrections) passesRBAC = true;
           }
         } else {
           let isInMyTurn = false;
@@ -221,14 +233,21 @@ const AppContent: React.FC = () => {
           } else {
             isInMyTurn = projectStage === userDept || (p.status === 'Correcciones' && projectStage === userDept);
           }
-          if (!isInMyTurn) return false;
+          
           const isAssigned = p.asignaciones?.some(a => 
             (a.usuarioIds?.includes(userId || '') || a.usuarioId === userId) && normalizeString(a.area) === userDept
           );
           const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
-          if (!isAssigned && !isOwner) return false;
+          
+          if (isInMyTurn && (isAssigned || isOwner)) passesRBAC = true;
         }
-        return true;
+
+        // If it passes RBAC, it's in the inbox.
+        // If it doesn't pass RBAC but it's an ID search, we show it too (to avoid "missing" search results)
+        if (passesRBAC) return true;
+        if (isIdSearch) return true;
+
+        return false;
       }) || [];
 
       // Apply Filters

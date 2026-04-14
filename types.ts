@@ -165,6 +165,7 @@ export interface ODTContextType {
   users: User[];
   notifications: Notification[];
   loading: boolean;
+  isInitialLoad: boolean;
   isAlertsOpen: boolean;
   setIsAlertsOpen: (open: boolean) => void;
   login: (username: string, pass: string) => Promise<LoginResult>;

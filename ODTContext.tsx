@@ -27,7 +27,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [notifications, setNotifications] = useState<ProjectNotification[]>([]);
-  const [loading, setLoading] = useState(!!db);
+  const [loading, setLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
 
   const notificationAudio = useRef<HTMLAudioElement | null>(null);
@@ -67,31 +68,32 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (!db) {
-      return;
+      const timer = setTimeout(() => setLoading(false), 0);
+      return () => clearTimeout(timer);
     }
     const projectsRef = ref(db, 'projects');
     const usersRef = ref(db, 'users');
     const clientsRef = ref(db, 'clients');
+    const notificationsRef = ref(db, 'notifications');
 
-    onValue(projectsRef, (s) => {
+    const unsubProjects = onValue(projectsRef, (s) => {
       const d = s.val();
       const all: Project[] = d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : [];
       setProjects(all.filter(p => !p.deleted));
       setDeletedProjects(all.filter(p => p.deleted));
     });
 
-    onValue(usersRef, (s) => {
+    const unsubUsers = onValue(usersRef, (s) => {
       const d = s.val();
       setUsers(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
     });
 
-    onValue(clientsRef, (s) => {
+    const unsubClients = onValue(clientsRef, (s) => {
       const d = s.val();
       setClients(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
     });
 
-    const notificationsRef = ref(db, 'notifications');
-    onValue(notificationsRef, (s) => {
+    const unsubNotifs = onValue(notificationsRef, (s) => {
       const d = s.val();
       const list: ProjectNotification[] = d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : [];
       
@@ -111,7 +113,15 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setNotifications(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setLoading(false);
+      setIsInitialLoad(false);
     });
+
+    return () => {
+      unsubProjects();
+      unsubUsers();
+      unsubClients();
+      unsubNotifs();
+    };
   }, [user]);
 
   const getRoadmapStages = (project: Project) => {
@@ -1362,7 +1372,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <ODTContext.Provider value={{ 
-      user, projects, deletedProjects, clients, users, notifications, loading, login, logout, 
+      user, projects, deletedProjects, clients, users, notifications, loading, isInitialLoad, login, logout, 
       isAlertsOpen, setIsAlertsOpen,
       updateProjectStatus: async () => {}, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
       processQA, 

@@ -28,6 +28,7 @@ const AppContent: React.FC = () => {
 
   const canAccessAdminDashboard = (u: User | null) => {
     if (!u) return false;
+    const hasRole = (r: UserRole) => u.role === r || (u.roles && u.roles.includes(r));
     const allowedRoles = [
       UserRole.Admin, 
       UserRole.Cuentas_Lider, 
@@ -36,7 +37,7 @@ const AppContent: React.FC = () => {
       UserRole.Administracion_Opera
     ];
     const allowedDepts = ['Administración', 'Finanzas'];
-    return allowedRoles.includes(u.role) || allowedDepts.includes(u.department);
+    return allowedRoles.some(r => hasRole(r)) || allowedDepts.includes(u.department);
   };
 
   if (!db || isInitialLoad) {
@@ -159,14 +160,19 @@ const AppContent: React.FC = () => {
     const { user, projects, users, checkSLA } = useODT();
     const isGlobalLead = user?.role === UserRole.Admin;
 
-    const isLeader = user && [
-      UserRole.Cuentas_Lider,
-      UserRole.Lider_Operativo,
-      UserRole.Correccion,
-      UserRole.Medico_Lider,
-      UserRole.Administracion_Lider,
-      UserRole.Admin
-    ].includes(user.role);
+    const isLeader = useMemo(() => {
+      if (!user) return false;
+      const hasRole = (r: UserRole) => user.role === r || (user.roles && user.roles.includes(r));
+      const leaderRoles = [
+        UserRole.Cuentas_Lider,
+        UserRole.Lider_Operativo,
+        UserRole.Correccion,
+        UserRole.Medico_Lider,
+        UserRole.Administracion_Lider,
+        UserRole.Admin
+      ];
+      return leaderRoles.some(r => hasRole(r));
+    }, [user]);
 
     const categories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.category).filter(Boolean))], [projects]);
     const subCategories = useMemo(() => ['Todas', ...new Set(projects.map(p => p.subCategory).filter(Boolean))], [projects]);

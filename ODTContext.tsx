@@ -29,6 +29,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [notifications, setNotifications] = useState<ProjectNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
 
   const notificationAudio = useRef<HTMLAudioElement | null>(null);
@@ -122,7 +123,27 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubClients();
       unsubNotifs();
     };
-  }, [user]);
+  }, [user?.id]); // Only re-run if user ID changes
+
+  // Real-time listener for CURRENT logged-in user to ensure roles are always fresh
+  useEffect(() => {
+    if (!db || !user?.id || user.id === 'admin') return;
+    
+    const currentUserRef = ref(db, `users/${user.id}`);
+    const unsub = onValue(currentUserRef, (s) => {
+      if (s.exists()) {
+        const freshData = { ...s.val(), id: user.id };
+        // Only update if data actually changed to avoid infinite loops
+        if (JSON.stringify(freshData) !== JSON.stringify(user)) {
+          console.log("Sesión actualizada con datos frescos de Firestore");
+          setUser(freshData);
+          localStorage.setItem('apc_session', JSON.stringify(freshData));
+        }
+      }
+    });
+    
+    return () => unsub();
+  }, [user?.id, user]);
 
   const getRoadmapStages = (project: Project) => {
     return calculateRoadmap(project.areas_seleccionadas || []);
@@ -131,24 +152,46 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const login = async (username: string, pass: string): Promise<LoginResult> => {
     const cleanUsername = username.toLowerCase().trim();
     const dbKey = escapeFirebaseKey(cleanUsername);
+    setIsLoggingIn(true);
+    
     if (cleanUsername === 'admin' && pass === 'admin') {
-      const adminBypass: User = { id: 'admin', name: 'Admin Bypass', username: 'admin', department: 'Sistemas', role: UserRole.Admin, active: true };
+      const adminBypass: User = { id: 'admin', name: 'Admin Bypass', username: 'admin', department: 'Sistemas', role: UserRole.Admin, active: true, roles: [UserRole.Admin] };
       setUser(adminBypass);
       localStorage.setItem('apc_session', JSON.stringify(adminBypass));
+      setIsLoggingIn(false);
       return { success: true };
     }
     try {
       const userRef = ref(db, `users/${dbKey}`);
       const snapshot = await get(userRef);
-      if (!snapshot.exists()) return { success: false, error: `Usuario no encontrado.` };
+      if (!snapshot.exists()) {
+        setIsLoggingIn(false);
+        return { success: false, error: `Usuario no encontrado.` };
+      }
       const userData = snapshot.val();
-      if (!userData.active) return { success: false, error: 'Cuenta inactiva.' };
-      if (userData.password !== pass) return { success: false, error: 'Contraseña incorrecta.' };
-      const authUser: User = { ...userData, id: dbKey };
+      if (!userData.active) {
+        setIsLoggingIn(false);
+        return { success: false, error: 'Cuenta inactiva.' };
+      }
+      if (userData.password !== pass) {
+        setIsLoggingIn(false);
+        return { success: false, error: 'Contraseña incorrecta.' };
+      }
+      
+      // Force fresh data and ensure roles array exists
+      const authUser: User = { 
+        ...userData, 
+        id: dbKey,
+        roles: userData.roles || [userData.role]
+      };
+      
       setUser(authUser);
       localStorage.setItem('apc_session', JSON.stringify(authUser));
+      setIsLoggingIn(false);
       return { success: true };
-    } catch {
+    } catch (error) {
+      console.error("Login error:", error);
+      setIsLoggingIn(false);
       return { success: false, error: 'Error de conexión.' };
     }
   };
@@ -964,7 +1007,29 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const manageUser = async (userData: Partial<User>) => {
     if (!db || !userData.username) throw new Error("Datos incompletos.");
     const dbKey = escapeFirebaseKey(userData.username);
-    await set(ref(db, `users/${dbKey}`), { ...userData, username: userData.username.toLowerCase(), createdAt: new Date().toISOString() });
+    const userRef = ref(db, `users/${dbKey}`);
+    
+    // Check if user exists to preserve createdAt or other fields if needed
+    const snapshot = await get(userRef);
+    const existingData = snapshot.exists() ? snapshot.val() : {};
+    
+    const updatedData = {
+      ...existingData,
+      ...userData,
+      username: userData.username.toLowerCase(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Explicitly overwrite roles array if provided in userData
+    if (userData.roles) {
+      updatedData.roles = userData.roles;
+    }
+    
+    if (!existingData.createdAt) {
+      updatedData.createdAt = new Date().toISOString();
+    }
+    
+    await set(userRef, updatedData);
   };
 
   const toggleUserStatus = async (userId: string, active: boolean) => {
@@ -1407,7 +1472,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <ODTContext.Provider value={{ 
-      user, projects, deletedProjects, clients, users, notifications, loading, isInitialLoad, login, logout, 
+      user, projects, deletedProjects, clients, users, notifications, loading, isInitialLoad, isLoggingIn, login, logout, 
       isAlertsOpen, setIsAlertsOpen,
       updateProjectStatus: async () => {}, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
       processQA, 

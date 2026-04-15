@@ -94,7 +94,7 @@ export const AppRouter: React.FC<{
   onRouteReset?: () => void
 }> = ({ renderView, onRouteReset }) => {
   const { Icons } = Constants;
-  const { user, logout } = useODT();
+  const { user, logout, isLoggingIn } = useODT();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
@@ -116,6 +116,7 @@ export const AppRouter: React.FC<{
 
   const canAccessAdminDashboard = (u: User | null) => {
     if (!u) return false;
+    const hasRole = (r: UserRole) => u.role === r || (u.roles && u.roles.includes(r));
     const allowedRoles = [
       UserRole.Admin, 
       UserRole.Cuentas_Lider, 
@@ -123,8 +124,17 @@ export const AppRouter: React.FC<{
       UserRole.Administracion_Lider, 
       UserRole.Administracion_Opera
     ];
-    const allowedDepts = ['Administración', 'Finanzas'];
-    return allowedRoles.includes(u.role) || allowedDepts.includes(u.department);
+    const allowedDepts = ['Administración', 'Finanzas', 'Sistemas'];
+    return allowedRoles.some(r => hasRole(r)) || allowedDepts.includes(u.department);
+  };
+
+  const isLeader = (u: User | null) => {
+    if (!u) return false;
+    const roles = u.roles || [u.role];
+    return roles.some(r => {
+      const lower = r.toLowerCase();
+      return lower.includes('lider') || lower === 'correccion';
+    });
   };
 
   useEffect(() => {
@@ -138,8 +148,7 @@ export const AppRouter: React.FC<{
     // Protection for Admin Dashboard
     const isAdminDashboard = location.pathname === '/dashboard' || location.pathname === '/dashboard-adm';
     if (isAdminDashboard && !canAccessAdminDashboard(user)) {
-      const isLeader = user.role === UserRole.Lider_Operativo || user.role === UserRole.Medico_Lider || user.role === UserRole.Correccion;
-      navigate(isLeader ? '/leader-dashboard' : '/my-projects', { replace: true });
+      navigate(isLeader(user) ? '/leader-dashboard' : '/my-projects', { replace: true });
       return;
     }
 
@@ -147,19 +156,32 @@ export const AppRouter: React.FC<{
     if (location.pathname === '/' || location.pathname === '/login') {
       let nextPath = '/my-projects';
       
+      const hasRole = (r: UserRole) => user.role === r || (user.roles && user.roles.includes(r));
+
       if (canAccessAdminDashboard(user)) {
         nextPath = '/dashboard-adm';
-      } else if (user.role === UserRole.Correccion || user.role === UserRole.Medico_Lider || user.role === UserRole.Lider_Operativo) {
+      } else if (isLeader(user)) {
         nextPath = '/leader-dashboard';
-      } else if (user.role === UserRole.QA_Opera) {
+      } else if (hasRole(UserRole.QA_Opera)) {
         nextPath = '/qa-box';
-      } else if (user.role === UserRole.Cuentas_Opera || user.role === UserRole.Cuentas_Lider) {
+      } else if (hasRole(UserRole.Cuentas_Opera)) {
         nextPath = '/clients';
       }
       
+      console.log(`Redirigiendo usuario ${user.username} a ${nextPath} basado en roles:`, user.roles || [user.role]);
       navigate(nextPath);
     }
   }, [user, location.pathname, navigate]);
+
+  if (isLoggingIn) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-10">
+        <div className="w-16 h-16 border-4 border-apc-green border-t-transparent rounded-full animate-spin mb-6"></div>
+        <h2 className="text-2xl font-black tracking-tighter mb-2">INICIANDO SESIÓN</h2>
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Determinando área de trabajo y permisos...</p>
+      </div>
+    );
+  }
 
   if (!user) {
     return (

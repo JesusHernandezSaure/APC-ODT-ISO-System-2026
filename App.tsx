@@ -156,6 +156,7 @@ const AppContent: React.FC = () => {
     const [filterCategory, setFilterCategory] = useState('Todas');
     const [filterSubCategory, setFilterSubCategory] = useState('Todas');
     const [filterResponsible, setFilterResponsible] = useState('Todas');
+    const [activeTab, setActiveTab] = useState<'tasks' | 'standby'>('tasks');
 
     const { user, projects, users, checkSLA } = useODT();
     const isGlobalLead = user?.role === UserRole.Admin;
@@ -186,12 +187,24 @@ const AppContent: React.FC = () => {
 
     const myProjects = useMemo(() => {
       const search = normalizeString(searchTerm);
+      const userRole = user?.role as UserRole;
+      const isCuentasOrAdmin = user?.department === 'Cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera || userRole === UserRole.Admin;
       
       let result = projects?.filter(p => {
-        const userRole = user?.role as UserRole;
         const userId = user?.id;
         const userDept = normalizeString(user?.department || '');
         const projectStage = normalizeString(p.etapa_actual || '');
+
+        const isStandby = p.enStandby || p.status === 'En revisión con cliente' || projectStage.includes('en revision con cliente');
+
+        // REGLA: Excluir de bandejas operativas normales si no es Cuentas/Admin
+        if (!isCuentasOrAdmin && isStandby) return false;
+
+        // REGLA: Filtrar por pestaña para Cuentas/Admin
+        if (isCuentasOrAdmin) {
+          if (activeTab === 'tasks' && isStandby) return false;
+          if (activeTab === 'standby' && !isStandby) return false;
+        }
 
         // If searching for a specific ID, allow finding it even if not in current inbox scope
         // (Only for internal users)
@@ -301,7 +314,7 @@ const AppContent: React.FC = () => {
         const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
         return dateA - dateB;
       });
-    }, [projects, user, searchTerm, filterStatus, filterCategory, filterSubCategory, filterResponsible, users]);
+    }, [projects, user, searchTerm, filterStatus, filterCategory, filterSubCategory, filterResponsible, users, activeTab]);
     
     return (
       <div className="space-y-6 max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
@@ -324,6 +337,24 @@ const AppContent: React.FC = () => {
             />
           </div>
         </header>
+
+        {/* Tab System for Accounts/Admin */}
+        {(user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera || user?.role === UserRole.Admin) && (
+          <div className="flex border-b border-slate-100 -mx-2 px-2 sticky top-[80px] bg-white z-10 pt-2">
+            <button 
+              onClick={() => setActiveTab('tasks')}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'tasks' ? 'border-apc-pink text-apc-pink' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            >
+              Mis Tareas
+            </button>
+            <button 
+              onClick={() => setActiveTab('standby')}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'standby' ? 'border-apc-purple text-apc-purple' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            >
+              Esperando Cliente / Standby
+            </button>
+          </div>
+        )}
 
         {/* Filter Bar */}
         <div className="flex flex-wrap gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
@@ -415,6 +446,10 @@ const AppContent: React.FC = () => {
         const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
         const inQAStage = currentE.includes('REVISIÓN QA') || p.status === 'QA';
         
+        // REGLA: Excluir ODTs en Standby de la carga operativa de QA
+        const isStandby = p.enStandby || p.status === 'En revisión con cliente' || currentE.includes('EN REVISIÓN CON CLIENTE');
+        if (isStandby) return false;
+
         if (!inQAStage) return false;
 
         const userRole = user?.role as UserRole;

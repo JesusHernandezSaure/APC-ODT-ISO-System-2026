@@ -459,6 +459,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updates: Record<string, unknown> = {
       status: active ? 'En revisión con cliente' : 'En Proceso',
+      enStandby: active,
       client_standby_periods: periods,
       updatedAt: now,
       comentarios: [{
@@ -864,9 +865,19 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!project) return;
 
     const stages = getRoadmapStages(project);
+    const now = new Date().toISOString();
+    
+    // REGLA: Al procesar feedback del cliente, la ODT sale de Standby automáticamente
+    const periods = [...(project.client_standby_periods || [])];
+    if (periods.length > 0 && !periods[periods.length - 1].end) {
+      periods[periods.length - 1].end = now;
+    }
+
     let updates: Record<string, unknown> = {
       client_feedback: result,
-      updatedAt: new Date().toISOString(),
+      enStandby: false,
+      client_standby_periods: periods,
+      updatedAt: now,
     };
 
     let alarmTriggered = false;

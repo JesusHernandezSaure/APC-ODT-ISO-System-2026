@@ -99,6 +99,7 @@ export interface Project {
   is_alarm_active?: boolean;
   internal_qa_rejection_count?: number;
   contadorCorrecciones?: number;
+  enStandby?: boolean;
   deleted?: boolean;
   deletedBy?: string;
   deletedByName?: string;

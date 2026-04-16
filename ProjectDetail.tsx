@@ -162,13 +162,15 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       return isAreaLead || isDirectlyAssigned;
     }
 
+    if (project.enStandby || project.status === 'En revisión con cliente') return user.department === 'Cuentas' || hasRole(user, UserRole.Admin) || hasRole(user, UserRole.Cuentas_Lider) || hasRole(user, UserRole.Cuentas_Opera);
+
     // Fix: Explicitly casting to string to avoid "no overlap" error caused by narrowed literal types
     if (isInitialStage) return user.department === 'Cuentas' || hasRole(user, UserRole.Cuentas_Lider) || hasRole(user, UserRole.Cuentas_Opera);
     if ((currentStageName as string) === (GLOBAL_STAGES.CLOSING as string)) return user.department === 'Cuentas';
     if ((currentStageName as string) === (GLOBAL_STAGES.BILLING as string)) return user.department === 'Administración' || user.department === 'Finanzas';
 
     return false;
-  }, [user, currentIdx, isQAStage, isProductionStage, isInitialStage, currentStageName, project.asignaciones, roadmapStages, project.esCampana, project.areas_seleccionadas, project.estadoPorArea]);
+  }, [user, currentIdx, isQAStage, isProductionStage, isInitialStage, currentStageName, project.asignaciones, roadmapStages, project.esCampana, project.areas_seleccionadas, project.estadoPorArea, project.enStandby, project.status]);
 
   const canAddObservation = useMemo(() => {
     if (!user) return false;
@@ -1069,7 +1071,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </div>
         )}
 
-        {isClosingStage && canOperate && project.status !== 'Finalizado' && (
+        {(isClosingStage || project.enStandby || project.status === 'En revisión con cliente') && canOperate && project.status !== 'Finalizado' && (
           <div className="bg-white p-6 rounded-3xl border shadow-xl border-t-8 border-apc-pink space-y-6">
             <h3 className="font-black text-[10px] uppercase tracking-widest text-apc-pink flex items-center gap-2">
               <Icons.Check className="w-4 h-4" /> Cierre y Calidad de Cuentas

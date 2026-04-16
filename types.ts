@@ -78,6 +78,7 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   fecha_entrega?: string;
+  fechasInternas?: Record<string, string>;
   fecha_finalizado?: string;
   current_stage_index: number;
   last_delivery_link?: string;

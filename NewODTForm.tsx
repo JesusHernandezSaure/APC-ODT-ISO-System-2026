@@ -38,6 +38,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   const [monto, setMonto] = useState(0);
   const [justification, setJustification] = useState('');
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
+  const [fechasInternas, setFechasInternas] = useState<Record<string, string>>({});
   const [brief, setBrief] = useState('');
   const [links, setLinks] = useState<string[]>(['']);
 
@@ -61,9 +62,21 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   };
 
   const toggleArea = (area: string) => {
-    setSelectedAreas(prev => 
-      prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]
-    );
+    setSelectedAreas(prev => {
+      const isSelected = prev.includes(area);
+      if (isSelected) {
+        const newFechas = { ...fechasInternas };
+        delete newFechas[area];
+        setFechasInternas(newFechas);
+        return prev.filter(a => a !== area);
+      } else {
+        return [...prev, area];
+      }
+    });
+  };
+
+  const handleFechaInternaChange = (area: string, fecha: string) => {
+    setFechasInternas(prev => ({ ...prev, [area]: fecha }));
   };
 
   const handleStructureBrief = async () => {
@@ -96,8 +109,24 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
       alert("Error: Debe seleccionar al menos un área operativa para la ruta ISO.");
       return;
     }
+
+    if (!fechaEntrega) {
+      alert("Error: Debe definir primero la Fecha de Entrega Global.");
+      return;
+    }
+
+    const hasInvalidDates = selectedAreas.some(area => {
+      const internalDate = fechasInternas[area];
+      return !internalDate || (fechaEntrega && internalDate > fechaEntrega);
+    });
+
+    if (hasInvalidDates) {
+      alert("Error: Todas las áreas seleccionadas deben tener un Deadline Interno válido (no posterior a la entrega global).");
+      return;
+    }
+
     setLoading(true);
-        try {
+    try {
       const newProject: Partial<Project> = {
         id: odtId,
         clientId: client.id,
@@ -105,6 +134,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         marca,
         producto,
         fecha_entrega: fechaEntrega,
+        fechasInternas,
         category,
         subCategory,
         detalleEntregableCampaña: category === 'Campaña' ? detalleEntregableCampaña : '',
@@ -221,12 +251,42 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
 
           <section className="space-y-3">
              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ruta ISO (Áreas Operativas Oficiales)</label>
-             <div className="flex flex-wrap gap-2">
-              {OPERATIVE_AREAS.map(area => (
-                <button key={area} type="button" onClick={() => toggleArea(area)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${selectedAreas.includes(area) ? 'bg-apc-green border-apc-green text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-apc-pink/30'}`}>
-                  {area}
-                </button>
-              ))}
+             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {OPERATIVE_AREAS.map(area => {
+                const isSelected = selectedAreas.includes(area);
+                const isInvalid = fechaEntrega && fechasInternas[area] && fechasInternas[area] > fechaEntrega;
+                
+                return (
+                  <div key={area} className="space-y-2">
+                    <button 
+                      type="button" 
+                      onClick={() => toggleArea(area)} 
+                      className={`w-full px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${isSelected ? 'bg-apc-green border-apc-green text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-apc-pink/30'}`}
+                    >
+                      {area}
+                    </button>
+                    {isSelected && (
+                      <div className="animate-fadeIn space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Deadline {area}</label>
+                        <input 
+                          required 
+                          type="date" 
+                          disabled={!fechaEntrega}
+                          value={fechasInternas[area] || ''} 
+                          onChange={e => handleFechaInternaChange(area, e.target.value)}
+                          className={`w-full px-3 py-2 bg-white border-2 rounded-xl text-[11px] font-bold outline-none transition-all ${!fechaEntrega ? 'opacity-50 cursor-not-allowed' : isInvalid ? 'border-red-500 ring-4 ring-red-50' : 'border-slate-100 focus:border-apc-pink'}`}
+                        />
+                        {isInvalid && (
+                          <p className="text-[8px] text-red-500 font-bold uppercase tracking-tighter mt-1">⚠️ posterior a entrega global</p>
+                        )}
+                        {!fechaEntrega && (
+                          <p className="text-[7px] text-amber-500 font-bold uppercase tracking-tighter italic">Define fecha global primero</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
              </div>
              <p className="text-[9px] text-slate-400 font-bold uppercase italic mt-1">* Se insertará automáticamente un gate de REVISIÓN QA tras completar cada área técnica.</p>
           </section>

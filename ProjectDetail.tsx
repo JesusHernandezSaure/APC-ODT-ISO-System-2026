@@ -102,7 +102,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const hasClientLink = project.presentation_link || project.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
   const displayStatus = (project.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : project.status;
 
-  const priority = getPriorityInfo(project.fecha_entrega);
+  const userDept = user?.department || '';
+  const userRole = user?.role || '';
+  const isAdminOrCuentas = userRole === UserRole.Admin || normalizeString(userDept) === 'cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera;
+  
+  const operativeArea = OPERATIVE_AREAS.find(a => normalizeString(a) === normalizeString(userDept));
+  const internalDeadline = project.fechasInternas && operativeArea ? project.fechasInternas[operativeArea] : null;
+
+  const showInternal = !isAdminOrCuentas && !!internalDeadline;
+  const displayDate = (showInternal && internalDeadline) ? internalDeadline : project.fecha_entrega;
+  
+  const priority = getPriorityInfo(displayDate);
 
   const currentIdx = project.current_stage_index || 0;
   const currentStageName = roadmapStages[currentIdx];
@@ -601,15 +611,20 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             </div>
 
             {/* Fecha de Entrega */}
-            {project.fecha_entrega && (
-              <div className="flex items-center gap-2.5 px-4 py-2 bg-white/15 backdrop-blur-sm rounded-2xl text-white text-[10px] font-black uppercase border border-white/20 shadow-sm">
-                <Icons.Calendar className="w-4 h-4 opacity-70" />
-                Entrega: {new Date(project.fecha_entrega + 'T00:00:00').toLocaleDateString()}
+            {displayDate && (
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2.5 px-4 py-2 bg-white/15 backdrop-blur-sm rounded-2xl text-white text-[10px] font-black uppercase border border-white/20 shadow-sm">
+                  <Icons.Calendar className="w-4 h-4 opacity-70" />
+                  Entrega: {new Date(displayDate + 'T00:00:00').toLocaleDateString()}
+                </div>
+                {showInternal && (
+                  <span className="text-[7px] font-black text-white/60 uppercase tracking-[0.2em] mr-2 italic">Deadline Interno ({operativeArea})</span>
+                )}
               </div>
             )}
 
             {/* Prioridad */}
-            {project.fecha_entrega && (
+            {displayDate && (
               <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl ${priority.color} text-white text-[10px] font-black uppercase shadow-lg border border-white/10`}>
                 <div className={`w-2 h-2 bg-white shadow-sm ${priority.shape === 'rhombus' ? 'rotate-45' : 'rounded-full'}`}></div>
                 {priority.text}

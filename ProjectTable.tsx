@@ -2,7 +2,8 @@
 import React from 'react';
 import { Project, User, UserRole } from './types';
 import { Icons } from './constants';
-import { normalizeString, getPriorityInfo } from './workflowConfig';
+import { normalizeString, getPriorityInfo, OPERATIVE_AREAS } from './workflowConfig';
+import { useODT } from './ODTContext';
 
 interface ProjectTableProps {
   projects: Project[];
@@ -12,25 +13,39 @@ interface ProjectTableProps {
   users: User[];
 }
 
-export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, checkSLA, highlightUnassigned, users }) => (
-  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-    <table className="w-full text-sm text-left">
-      <thead className="bg-slate-50 text-slate-500 font-black text-[10px] uppercase tracking-widest">
-        <tr>
-          <th className="px-6 py-5">ODT ID</th>
-          <th className="px-6 py-5">Proyecto / Cliente</th>
-          <th className="px-6 py-5">Responsable</th>
-          <th className="px-6 py-5">Status</th>
-          <th className="px-6 py-5">Entrega / Prioridad</th>
-          <th className="px-6 py-5">SLA</th>
-          <th className="px-6 py-5 text-right">Acciones</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {projects?.map((p: Project) => {
-          const sla = checkSLA(p);
-          const priority = getPriorityInfo(p.fecha_entrega);
-          const currentStage = (p.etapa_actual || p.etapaActual || '');
+export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, checkSLA, highlightUnassigned, users }) => {
+  const { user: currentUser } = useODT();
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+      <table className="w-full text-sm text-left">
+        <thead className="bg-slate-50 text-slate-500 font-black text-[10px] uppercase tracking-widest">
+          <tr>
+            <th className="px-6 py-5">ODT ID</th>
+            <th className="px-6 py-5">Proyecto / Cliente</th>
+            <th className="px-6 py-5">Responsable</th>
+            <th className="px-6 py-5">Status</th>
+            <th className="px-6 py-5">Entrega / Prioridad</th>
+            <th className="px-6 py-5">SLA</th>
+            <th className="px-6 py-5 text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {projects?.map((p: Project) => {
+            const sla = checkSLA(p);
+            
+            const userDept = currentUser?.department || '';
+            const userRole = currentUser?.role || '';
+            const isAdminOrCuentas = userRole === UserRole.Admin || normalizeString(userDept) === 'cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera;
+            
+            const operativeArea = OPERATIVE_AREAS.find(a => normalizeString(a) === normalizeString(userDept));
+            const internalDeadline = p.fechasInternas && operativeArea ? p.fechasInternas[operativeArea] : null;
+
+            const showInternal = !isAdminOrCuentas && !!internalDeadline;
+            const displayDate = (showInternal && internalDeadline) ? internalDeadline : p.fecha_entrega;
+
+            const priority = getPriorityInfo(displayDate);
+            const currentStage = (p.etapa_actual || p.etapaActual || '');
           const isQA = currentStage.toUpperCase().includes('QA') || p.status === 'QA';
           const targetArea = isQA ? 'QA' : currentStage;
           const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
@@ -173,18 +188,23 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
               </td>
               <td className="px-6 py-4">
                 <div className="flex items-center gap-2">
-                  {p.fecha_entrega && (
+                  {displayDate && (
                     <div className={`w-3 h-3 ${priority.shape === 'rhombus' ? 'rotate-45' : 'rounded-full'} ${priority.color} shadow-sm`} title={priority.text}></div>
                   )}
-                  {p.fecha_entrega ? (
-                    <span className={`text-[10px] font-bold ${priority.textColor}`}>
-                      {new Date(p.fecha_entrega + 'T00:00:00').toLocaleDateString()}
-                    </span>
+                  {displayDate ? (
+                    <div className="flex flex-col">
+                      <span className={`text-[10px] font-bold ${priority.textColor}`}>
+                        {new Date(displayDate + 'T00:00:00').toLocaleDateString()}
+                      </span>
+                      {showInternal && (
+                        <span className="text-[7px] font-black text-apc-pink uppercase tracking-tighter -mt-0.5">Deadline Interno</span>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-[10px] text-slate-300 italic">N/A</span>
                   )}
                 </div>
-                {p.fecha_entrega && (
+                {displayDate && (
                   <div className={`text-[7px] font-black uppercase mt-0.5 ${priority.textColor}`}>
                     {priority.text}
                   </div>
@@ -225,4 +245,5 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
       </tbody>
     </table>
   </div>
-);
+  );
+};

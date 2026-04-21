@@ -133,6 +133,10 @@
     font-size: 11px;
     line-height: 1.5;
   }
+  .rich-text-preview a {
+    @apply text-blue-600 hover:underline cursor-pointer;
+    pointer-events: auto !important;
+  }
   .rich-text-preview h1, .rich-text-preview h2, .rich-text-preview h3 { @apply font-black mb-2 mt-4 text-slate-900; }
   .rich-text-preview p { @apply mb-2; }
   .rich-text-preview ul { @apply list-disc ml-5 mb-3; }

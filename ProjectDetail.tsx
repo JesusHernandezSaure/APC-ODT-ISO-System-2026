@@ -225,6 +225,21 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     setShowMentionDropdown(false);
   };
 
+  const processBriefHTML = (html: string) => {
+    if (!html) return { __html: '' };
+    // Ensure all <a> tags have target="_blank" and rel="noopener noreferrer"
+    // Using regex that avoids duplicating if already present
+    let processed = html;
+    if (processed.includes('<a')) {
+      // First clean up to avoid duplicates
+      processed = processed.replace(/ target="_blank"/g, '');
+      processed = processed.replace(/ rel="noopener noreferrer"/g, '');
+      // Then add them back
+      processed = processed.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
+    }
+    return { __html: processed };
+  };
+
   const renderTextWithLinks = (text: string) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const mentionRegex = /(@[\w.]+)/g;
@@ -713,43 +728,61 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             )}
           </div>
           <div className="bg-white rounded-xl border overflow-hidden">
-            <Editor
-              tinymceScriptSrc="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.3/tinymce.min.js"
-              disabled={!canEditBrief}
-              value={briefContent}
-              onEditorChange={(content) => {
-                setBriefContent(content);
-                updateBrief(project.id, content);
-              }}
-              init={{
-                height: 500,
-                menubar: true,
-                language: 'es',
-                language_url: 'https://cdn.jsdelivr.net/npm/tinymce-i18n@23.10.9/langs6/es.js',
-                plugins: [
-                  'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
-                  'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
-                  'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount'
-                ],
-                toolbar: 'undo redo | blocks | ' +
-                  'bold italic forecolor backcolor | alignleft aligncenter ' +
-                  'alignright alignjustify | bullist numlist outdent indent | ' +
-                  'removeformat | table tabledelete | tableprops tablerowprops tablecellprops | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol | help',
-                table_default_attributes: {
-                  border: '1'
-                },
-                table_default_styles: {
-                  'border-collapse': 'collapse',
-                  'width': 'auto',
-                  'margin-left': '0',
-                  'margin-right': 'auto'
-                },
-                content_style: 'body { font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:14px; margin: 1rem; } table { border-collapse: collapse; margin-left: 0 !important; margin-right: auto !important; } td, th { border: 1px solid #ccc; padding: 4px; }',
-                paste_data_images: true,
-                promotion: false,
-                branding: false
-              }}
-            />
+            {canEditBrief ? (
+              <Editor
+                tinymceScriptSrc="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.3/tinymce.min.js"
+                value={briefContent}
+                onEditorChange={(content) => {
+                  setBriefContent(content);
+                  updateBrief(project.id, content);
+                }}
+                init={{
+                  height: 500,
+                  menubar: true,
+                  language: 'es',
+                  language_url: 'https://cdn.jsdelivr.net/npm/tinymce-i18n@23.10.9/langs6/es.js',
+                  plugins: [
+                    'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+                    'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                    'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount'
+                  ],
+                  toolbar: 'undo redo | blocks | ' +
+                    'bold italic forecolor backcolor | alignleft aligncenter ' +
+                    'alignright alignjustify | bullist numlist outdent indent | ' +
+                    'link | removeformat | table tabledelete | tableprops tablerowprops tablecellprops | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol | help',
+                  default_link_target: '_blank',
+                  link_assume_external_targets: true,
+                  link_context_toolbar: false,
+                  setup: (editor) => {
+                    editor.on('click', (e) => {
+                      const linkNode = editor.dom.getParent(e.target, 'a');
+                      if (linkNode && linkNode.href) {
+                        e.preventDefault();
+                        window.open(linkNode.href, '_blank', 'noopener,noreferrer');
+                      }
+                    });
+                  },
+                  table_default_attributes: {
+                    border: '1'
+                  },
+                  table_default_styles: {
+                    'border-collapse': 'collapse',
+                    'width': 'auto',
+                    'margin-left': '0',
+                    'margin-right': 'auto'
+                  },
+                  content_style: 'body { font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:14px; margin: 1rem; } table { border-collapse: collapse; margin-left: 0 !important; margin-right: auto !important; } td, th { border: 1px solid #ccc; padding: 4px; }',
+                  paste_data_images: true,
+                  promotion: false,
+                  branding: false
+                }}
+              />
+            ) : (
+              <div 
+                className="p-6 rich-text-preview min-h-[300px]"
+                dangerouslySetInnerHTML={processBriefHTML(briefContent || '')}
+              />
+            )}
           </div>
         </div>
 
@@ -1017,7 +1050,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                       <div className="mt-4 p-4 bg-white rounded-xl border border-blue-100 max-h-[300px] overflow-y-auto">
                         <div 
                           className="rich-text-preview"
-                          dangerouslySetInnerHTML={{ __html: c.contenidoHTML || '' }} 
+                          dangerouslySetInnerHTML={processBriefHTML(c.contenidoHTML || '')} 
                         />
                       </div>
                     </details>

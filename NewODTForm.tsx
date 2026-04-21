@@ -338,7 +338,19 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
                     toolbar: 'undo redo | blocks | ' +
                       'bold italic forecolor backcolor | alignleft aligncenter ' +
                       'alignright alignjustify | bullist numlist outdent indent | ' +
-                      'removeformat | table tabledelete | tableprops tablerowprops tablecellprops | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol | help',
+                      'link | removeformat | table tabledelete | tableprops tablerowprops tablecellprops | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol | help',
+                    default_link_target: '_blank',
+                    link_assume_external_targets: true,
+                    link_context_toolbar: false,
+                    setup: (editor) => {
+                      editor.on('click', (e) => {
+                        const linkNode = editor.dom.getParent(e.target, 'a');
+                        if (linkNode && linkNode.href) {
+                          e.preventDefault();
+                          window.open(linkNode.href, '_blank', 'noopener,noreferrer');
+                        }
+                      });
+                    },
                     table_default_attributes: {
                       border: '1'
                     },

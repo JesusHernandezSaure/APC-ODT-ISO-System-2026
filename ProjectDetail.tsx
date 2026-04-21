@@ -959,11 +959,31 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               />
               <div className="flex justify-end">
                 <button 
-                  onClick={async () => {
-                    if (!traceabilityComment.trim()) return;
-                    await addTraceabilityComment(project.id, traceabilityComment);
-                    setTraceabilityComment('');
-                    setDialog({ type: 'alert', message: 'Observación agregada y notificada.' });
+                  type="button"
+                  onClick={async (e) => {
+                    const btn = e.currentTarget;
+                    if (!traceabilityComment.trim() || btn.disabled) return;
+                    
+                    try {
+                      btn.disabled = true;
+                      btn.classList.add('opacity-50', 'cursor-not-allowed');
+                      
+                      console.log("Iniciando guardado de observación...");
+                      await addTraceabilityComment(project.id, traceabilityComment);
+                      
+                      setTraceabilityComment('');
+                      setDialog({ type: 'alert', message: 'Observación agregada y notificada correctamente.' });
+                      console.log("Observación guardada con éxito.");
+                    } catch (error) {
+                      console.error("Error crítico al agregar observación:", error);
+                      setDialog({ 
+                        type: 'alert', 
+                        message: 'Error al guardar la observación. Por favor, revisa la consola para más detalles.' 
+                      });
+                    } finally {
+                      btn.disabled = false;
+                      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
                   }}
                   className="bg-apc-green text-white px-6 py-2 rounded-xl hover:bg-apc-green/80 transition-all text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-apc-green/20"
                 >

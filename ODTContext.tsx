@@ -1074,10 +1074,13 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       authorName: user.name,
       text: text,
       createdAt: new Date().toISOString(),
-      isSystemEvent: tipo ? true : false,
-      tipo: tipo || 'COMENTARIO',
-      contenidoHTML: contenidoHTML
+      isSystemEvent: !!tipo,
+      tipo: tipo || 'COMENTARIO'
     };
+
+    if (contenidoHTML !== undefined) {
+      newComment.contenidoHTML = contenidoHTML;
+    }
 
     const updates: Record<string, unknown> = {
       comentarios: [newComment, ...(project.comentarios || [])],

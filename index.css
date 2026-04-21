@@ -96,6 +96,38 @@
     font-family: 'Inter', sans-serif;
   }
 
+  /* Forzar alineación de tablas de CKEditor a la izquierda */
+  .ck-content figure.table,
+  .rich-text-preview figure.table {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+    margin-top: 1em !important;
+    margin-bottom: 1em !important;
+    display: table !important; /* Asegurar que se comporte como bloque alineado a la izquierda */
+  }
+
+  .ck-content figure.table table,
+  .rich-text-preview figure.table table {
+    width: auto !important; 
+    min-width: 50% !important;
+    border-collapse: collapse !important;
+    margin: 0 !important;
+  }
+
+  .ck-content td, .ck-content th,
+  .rich-text-preview td, .rich-text-preview th {
+    min-width: 2em;
+    padding: 0.4em;
+    border: 1px solid #bfbfbf !important;
+  }
+
+  /* Fix general para tablas que traen margin: auto o align: center de fuentes externas */
+  table {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+    text-align: left !important;
+  }
+
   /* Brief Preview Styles */
   .rich-text-preview {
     font-size: 11px;
@@ -105,9 +137,17 @@
   .rich-text-preview p { @apply mb-2; }
   .rich-text-preview ul { @apply list-disc ml-5 mb-3; }
   .rich-text-preview ol { @apply list-decimal ml-5 mb-3; }
-  .rich-text-preview table { @apply w-full border-collapse mb-4 border border-slate-200; }
+  .rich-text-preview table { 
+    margin-left: 0 !important;
+    margin-right: auto !important;
+    border-collapse: collapse !important; 
+    border: 1px solid #cbd5e1 !important;
+    width: auto !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+  }
   .rich-text-preview th { @apply bg-slate-50 font-black text-slate-600 border border-slate-200 p-2 text-left; }
-  .rich-text-preview td { @apply border border-slate-200 p-2 text-slate-700; }
+  .rich-text-preview td { @apply border border-slate-200 p-2 text-slate-700; vertical-align: top; }
   .rich-text-preview hr { @apply my-4 border-slate-100; }
   .rich-text-preview blockquote { @apply border-l-4 border-slate-200 pl-4 italic text-slate-500 my-4; }
 }

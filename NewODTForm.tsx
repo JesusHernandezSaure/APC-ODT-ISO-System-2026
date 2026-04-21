@@ -1,7 +1,6 @@
 
 import React, { useState } from 'react';
-import { CKEditor } from '@ckeditor/ckeditor5-react';
-import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
+import { Editor } from '@tinymce/tinymce-react';
 import { useODT } from './ODTContext';
 import { Client, Project } from './types';
 import { Icons } from './constants';
@@ -322,25 +321,37 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
                 <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded font-black">SOPORTA TABLAS EXCEL/WORD</span>
              </div>
              <div className="bg-white rounded-xl border overflow-hidden">
-               <CKEditor
-                  editor={ClassicEditor}
-                  data={brief}
-                  onChange={(event, editor) => {
-                    const data = editor.getData();
-                    setBrief(data);
-                  }}
-                  config={{
-                    toolbar: [
-                      'heading', '|', 
-                      'bold', 'italic', 'link', 'bulletedList', 'numberedList', 'blockQuote', '|', 
-                      'insertTable', '|', 
-                      'undo', 'redo'
+                <Editor
+                  tinymceScriptSrc="https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.3/tinymce.min.js"
+                  value={brief}
+                  onEditorChange={(content) => setBrief(content)}
+                  init={{
+                    height: 400,
+                    menubar: true,
+                    language: 'es',
+                    language_url: 'https://cdn.jsdelivr.net/npm/tinymce-i18n@23.10.9/langs6/es.js',
+                    plugins: [
+                      'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+                      'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                      'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount'
                     ],
-                    table: {
-                      contentToolbar: [
-                        'tableColumn', 'tableRow', 'mergeTableCells'
-                      ]
-                    }
+                    toolbar: 'undo redo | blocks | ' +
+                      'bold italic forecolor backcolor | alignleft aligncenter ' +
+                      'alignright alignjustify | bullist numlist outdent indent | ' +
+                      'removeformat | table tabledelete | tableprops tablerowprops tablecellprops | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol | help',
+                    table_default_attributes: {
+                      border: '1'
+                    },
+                    table_default_styles: {
+                      'border-collapse': 'collapse',
+                      'width': 'auto',
+                      'margin-left': '0',
+                      'margin-right': 'auto'
+                    },
+                    content_style: 'body { font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:14px; margin: 1rem; } table { border-collapse: collapse; margin-left: 0 !important; margin-right: auto !important; } td, th { border: 1px solid #ccc; padding: 4px; }',
+                    paste_data_images: true,
+                    promotion: false,
+                    branding: false
                   }}
                 />
                <div className="p-3 border-t flex justify-end">

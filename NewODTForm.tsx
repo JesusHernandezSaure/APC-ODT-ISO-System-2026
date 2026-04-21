@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
+import { CKEditor } from '@ckeditor/ckeditor5-react';
+import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
 import { useODT } from './ODTContext';
 import { Client, Project } from './types';
 import { Icons } from './constants';
@@ -321,8 +321,28 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brief Maestro y Requerimientos</label>
                 <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded font-black">SOPORTA TABLAS EXCEL/WORD</span>
              </div>
-             <div className="bg-white rounded-xl border">
-               <ReactQuill theme="snow" value={brief} onChange={setBrief} className="h-64 mb-12" />
+             <div className="bg-white rounded-xl border overflow-hidden">
+               <CKEditor
+                  editor={ClassicEditor}
+                  data={brief}
+                  onChange={(event, editor) => {
+                    const data = editor.getData();
+                    setBrief(data);
+                  }}
+                  config={{
+                    toolbar: [
+                      'heading', '|', 
+                      'bold', 'italic', 'link', 'bulletedList', 'numberedList', 'blockQuote', '|', 
+                      'insertTable', '|', 
+                      'undo', 'redo'
+                    ],
+                    table: {
+                      contentToolbar: [
+                        'tableColumn', 'tableRow', 'mergeTableCells'
+                      ]
+                    }
+                  }}
+                />
                <div className="p-3 border-t flex justify-end">
                  <button 
                    type="button"

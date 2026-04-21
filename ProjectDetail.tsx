@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
+import { CKEditor } from '@ckeditor/ckeditor5-react';
+import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
 import { useODT } from './ODTContext';
 import { Project, UserRole, Material, User } from './types';
 import { Icons } from './constants';
@@ -702,6 +702,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             </h3>
             {canEditBrief && (
               <button onClick={() => {
+                const hasChanged = briefContent !== project.brief;
+                if (hasChanged) {
+                  addTraceabilityComment(project.id, 'El Brief Maestro ha sido modificado', 'ACTUALIZACION_BRIEF', briefContent);
+                }
                 updateBrief(project.id, briefContent);
                 setDialog({ type: 'alert', message: "Brief Maestro guardado exitosamente." });
               }} className="px-4 py-2 bg-apc-green text-white text-[10px] font-black rounded-lg hover:bg-apc-green/80 transition-all uppercase tracking-widest">
@@ -709,7 +713,30 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               </button>
             )}
           </div>
-          <ReactQuill theme="snow" value={briefContent} onChange={setBriefContent} readOnly={!canEditBrief} />
+          <div className="bg-white rounded-xl border overflow-hidden">
+            <CKEditor
+              disabled={!canEditBrief}
+              editor={ClassicEditor}
+              data={briefContent}
+              onChange={(event, editor) => {
+                const data = editor.getData();
+                setBriefContent(data);
+              }}
+              config={{
+                toolbar: [
+                  'heading', '|', 
+                  'bold', 'italic', 'link', 'bulletedList', 'numberedList', 'blockQuote', '|', 
+                  'insertTable', '|', 
+                  'undo', 'redo'
+                ],
+                table: {
+                  contentToolbar: [
+                    'tableColumn', 'tableRow', 'mergeTableCells'
+                  ]
+                }
+              }}
+            />
+          </div>
         </div>
 
         {/* Accumulated Approved Materials */}
@@ -935,6 +962,41 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
           <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
             {(project.comentarios || []).map(c => {
+              if (c.tipo === 'ACTUALIZACION_BRIEF' || c.tipo === 'BRIEF_INICIAL') {
+                return (
+                  <div key={c.id} className="p-4 rounded-2xl text-xs border bg-blue-50/50 border-blue-200">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <Icons.Project className="w-3 h-3 text-blue-600" />
+                        <span className="font-black uppercase text-[10px] text-blue-600 tracking-wider">
+                          {c.tipo === 'BRIEF_INICIAL' ? 'Brief Inicial Registrado' : 'Brief Maestro Modificado'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">{new Date(c.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p className="font-bold text-slate-700 mb-2 truncate">{c.text}</p>
+                    <details className="mt-2 group">
+                      <summary className="cursor-pointer text-blue-600 font-black flex items-center gap-1 hover:underline list-none">
+                        <Icons.ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+                        <span>📄 Ver versión del brief de esta fecha</span>
+                      </summary>
+                      <div className="mt-4 p-4 bg-white rounded-xl border border-blue-100 max-h-[300px] overflow-y-auto">
+                        <div 
+                          className="rich-text-preview"
+                          dangerouslySetInnerHTML={{ __html: c.contenidoHTML || '' }} 
+                        />
+                      </div>
+                    </details>
+                    <div className="mt-4 flex items-center gap-2 pt-3 border-t border-blue-100/50">
+                      <div className="w-5 h-5 rounded-full bg-blue-200 flex items-center justify-center text-[8px] font-black text-blue-700 uppercase shadow-inner">
+                        {c.authorName.substring(0, 2)}
+                      </div>
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{c.authorName}</span>
+                    </div>
+                  </div>
+                );
+              }
+
               const isDelivery = c.text.includes('Entrega Técnica');
               return (
                 <div key={c.id} className={`p-4 rounded-2xl text-xs border-l-4 ${

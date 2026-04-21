@@ -73,33 +73,6 @@
     );
   }
 
-  /* Quill custom overrides */
-  .ql-container.ql-snow {
-    @apply border-slate-200;
-    border-radius: 0 0 12px 12px;
-  }
-  
-  .ql-toolbar.ql-snow {
-    @apply border-slate-200 bg-slate-50;
-    border-radius: 12px 12px 0 0;
-  }
-  
-  .ql-editor {
-    min-height: 250px;
-    font-size: 14px;
-  }
-
-  .ql-editor img {
-    max-width: 100% !important;
-    height: auto !important;
-  }
-  
-  .ql-editor table {
-    max-width: 100% !important;
-    overflow-x: auto;
-    display: block;
-  }
-
   /* Custom Scrollbar */
   .custom-scrollbar::-webkit-scrollbar {
     width: 4px;
@@ -116,4 +89,25 @@
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-300;
   }
+
+  /* CKEditor Height Fix */
+  .ck-editor__editable_inline {
+    min-height: 400px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Brief Preview Styles */
+  .rich-text-preview {
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .rich-text-preview h1, .rich-text-preview h2, .rich-text-preview h3 { @apply font-black mb-2 mt-4 text-slate-900; }
+  .rich-text-preview p { @apply mb-2; }
+  .rich-text-preview ul { @apply list-disc ml-5 mb-3; }
+  .rich-text-preview ol { @apply list-decimal ml-5 mb-3; }
+  .rich-text-preview table { @apply w-full border-collapse mb-4 border border-slate-200; }
+  .rich-text-preview th { @apply bg-slate-50 font-black text-slate-600 border border-slate-200 p-2 text-left; }
+  .rich-text-preview td { @apply border border-slate-200 p-2 text-slate-700; }
+  .rich-text-preview hr { @apply my-4 border-slate-100; }
+  .rich-text-preview blockquote { @apply border-l-4 border-slate-200 pl-4 italic text-slate-500 my-4; }
 }

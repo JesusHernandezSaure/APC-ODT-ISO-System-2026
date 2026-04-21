@@ -33,6 +33,8 @@ export interface ProjectComment {
   text: string;
   createdAt: string;
   isSystemEvent?: boolean;
+  tipo?: 'ACTUALIZACION_BRIEF' | 'BRIEF_INICIAL' | 'COMENTARIO' | 'SISTEMA';
+  contenidoHTML?: string;
 }
 
 export interface ProjectAssignment {
@@ -195,7 +197,7 @@ export interface ODTContextType {
   updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
   removeClient: (clientId: string) => Promise<void>;
   addProject: (project: Partial<Project>) => Promise<void>;
-  addTraceabilityComment: (projectId: string, text: string) => Promise<void>;
+  addTraceabilityComment: (projectId: string, text: string, tipo?: 'ACTUALIZACION_BRIEF' | 'BRIEF_INICIAL' | 'COMENTARIO' | 'SISTEMA', contenidoHTML?: string) => Promise<void>;
   updateQAChecklist: (projectId: string, item: 'medica' | 'estilo' | 'referencias', value: boolean) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
   manageUser: (userData: Partial<User>) => Promise<void>;

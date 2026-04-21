@@ -336,6 +336,16 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString(),
       comentarios: [
         { id: `sys-${Date.now()}`, authorId: user.id, authorName: user.name, text: isCampana ? `MODO CAMPAÑA INICIADO: Flujo en Paralelo.` : `ODT INICIADA EN ${GLOBAL_STAGES.START.toUpperCase()}`, createdAt: new Date().toISOString(), isSystemEvent: true },
+        { 
+          id: `brief-init-${Date.now()}`, 
+          authorId: user.id, 
+          authorName: user.name, 
+          text: 'Brief Maestro inicial registrado', 
+          createdAt: new Date().toISOString(), 
+          isSystemEvent: true,
+          tipo: 'BRIEF_INICIAL',
+          contenidoHTML: projectData.brief || ''
+        },
         ...(projectData.referenceLinks && projectData.referenceLinks.length > 0 ? [{
           id: `ref-${Date.now()}`,
           authorId: user.id,
@@ -1053,7 +1063,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await set(ref(db, `users/${userId}`), null);
   };
 
-  const addTraceabilityComment = async (projectId: string, text: string) => {
+  const addTraceabilityComment = async (projectId: string, text: string, tipo?: ProjectComment['tipo'], contenidoHTML?: string) => {
     if (!db || !user) return;
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
@@ -1064,7 +1074,9 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       authorName: user.name,
       text: text,
       createdAt: new Date().toISOString(),
-      isSystemEvent: false
+      isSystemEvent: tipo ? true : false,
+      tipo: tipo || 'COMENTARIO',
+      contenidoHTML: contenidoHTML
     };
 
     const updates: Record<string, unknown> = {

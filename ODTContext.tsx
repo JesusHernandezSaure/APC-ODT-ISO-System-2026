@@ -1467,8 +1467,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!project) return;
 
     const stages = getRoadmapStages(project);
-    const billingStage = GLOBAL_STAGES.BILLING;
-    const billingIndex = stages.indexOf(billingStage);
+    const closingStage = GLOBAL_STAGES.CLOSING;
+    const closingIndex = stages.indexOf(closingStage);
 
     const updates: Record<string, unknown> = {
       cierreAnticipado: {
@@ -1478,16 +1478,17 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fecha: new Date().toISOString(),
         usuarioUID: user.id
       },
-      current_stage_index: billingIndex !== -1 ? billingIndex : stages.length - 1,
-      etapa_actual: billingStage,
-      etapaActual: billingStage,
-      status: 'Pendiente de pago',
+      current_stage_index: closingIndex !== -1 ? closingIndex : stages.length - 1,
+      etapa_actual: closingStage,
+      etapaActual: closingStage,
+      status: 'En Proceso',
+      enStandby: false,
       updatedAt: new Date().toISOString(),
       comentarios: [{
         id: `early-close-${Date.now()}`,
         authorId: user.id,
         authorName: user.name,
-        text: `El ejecutivo ${user.name} ha cerrado anticipadamente este proceso. Motivo: ${data.motivo}${data.explicacion ? ` - ${data.explicacion}` : ''}. Enlace entregado: ${data.linkEvidencia}`,
+        text: '🚀 CIERRE ANTICIPADO: Producción técnica omitida. La ODT pasa a la bandeja de Cuentas (Cierre) para documentar el envío y enviar a revisión de cliente.',
         createdAt: new Date().toISOString(),
         isSystemEvent: true
       }, ...(project.comentarios || [])]

@@ -118,7 +118,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const currentIdx = project.current_stage_index || 0;
   const currentStageName = roadmapStages[currentIdx];
   const nextStageName = roadmapStages[currentIdx + 1];
-  const isQAStage = currentStageName?.includes('REVISIÓN QA');
+  const isQAStage = currentStageName?.toUpperCase().includes('REVISIÓN QA') || 
+                    currentStageName?.toUpperCase().includes('CORRECCIÓN') || 
+                    currentStageName?.toUpperCase().includes('CORRECION');
   const isClosingStage = currentStageName === GLOBAL_STAGES.CLOSING;
   
   const isInitialStage = currentIdx === 0;
@@ -144,16 +146,23 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     
     if (isQAStage) {
       const isQaLider = hasRole(user, UserRole.Correccion);
+      
+      // Nueva lógica: permitir si el usuario está explícitamente asignado a esta etapa o al área de QA
+      const isAssignedToThisQA = project.asignaciones?.some(a => 
+        (a.area === currentStageName || a.area === 'QA' || a.area === 'Corrección') && 
+        (a.usuarioIds?.includes(user.id) || a.usuarioId === user.id)
+      );
+
       const isQaOperaAssigned = hasRole(user, UserRole.QA_Opera) && project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
       
       // Si es una etapa de QA Médico, permitir a roles médicos o al líder de QA
       if (currentStageName?.includes('Médico')) {
         const isMedicalLider = hasRole(user, UserRole.Medico_Lider);
         const isMedicalOperaAssigned = hasRole(user, UserRole.Medico_Opera) && project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
-        return isQaLider || isMedicalLider || isMedicalOperaAssigned;
+        return isQaLider || isMedicalLider || isMedicalOperaAssigned || isAssignedToThisQA;
       }
       
-      return isQaLider || isQaOperaAssigned;
+      return isQaLider || isQaOperaAssigned || isAssignedToThisQA;
     }
     
     if (isProductionStage) {

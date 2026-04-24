@@ -72,6 +72,11 @@ export interface Project {
   comentarios: ProjectComment[];
   materiales?: Material[];
   monto_proyectado: number;
+  monto_valor_teorico?: number;
+  tipoCargo?: 'extra' | 'iguala' | 'interno';
+  complejidad?: 'Baja' | 'Media' | 'Alta';
+  paginas_estimadas?: number;
+  minutos_video_estimados?: number;
   brief: string;
   facturado?: boolean;
   pagado?: boolean;
@@ -134,6 +139,9 @@ export interface Client {
   notes?: string;
   assignedExecutives?: string[];
   createdAt: string;
+  montoIgualaMensual?: number;
+  igualaFacturada?: boolean;
+  igualaPagada?: boolean;
 }
 
 export type ViewState = 
@@ -193,7 +201,7 @@ export interface ODTContextType {
   checkSLA: (project: Project) => { isAlert: boolean; reason?: string };
   delegateProject: (projectId: string, area: string, userIds: string[]) => Promise<void>;
   reassignProjectAndFolder: (projectId: string, clientId: string, newExecutives: string[], portfolio?: boolean) => Promise<void>;
-  addClient: (name: string, notes?: string) => Promise<void>;
+  addClient: (name: string, notes?: string, montoIgualaMensual?: number) => Promise<void>;
   updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
   removeClient: (clientId: string) => Promise<void>;
   addProject: (project: Partial<Project>) => Promise<void>;
@@ -214,6 +222,7 @@ export interface ODTContextType {
   updateProjectAreas: (projectId: string, newAreas: string[]) => Promise<void>;
   fastTrackProject: (projectId: string, destinationStage: string, justification: string) => Promise<void>;
   earlyCloseProject: (projectId: string, data: { motivo: string; explicacion?: string; linkEvidencia: string }) => Promise<void>;
+  updateFullProject: (projectId: string, projectData: Partial<Project>) => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   clearNotifications: () => Promise<void>;
 }

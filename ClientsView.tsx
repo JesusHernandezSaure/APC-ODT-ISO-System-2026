@@ -15,11 +15,13 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   const { Edit, Trash, Users: UsersIcon, Folder, Plus, ChevronLeft, Clients: ClientsIcon, Ai, Search } = Icons;
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientName, setNewClientName] = useState('');
+  const [newClientMonto, setNewClientMonto] = useState(0);
   const [creatingODTForClient, setCreatingODTForClient] = useState<Client | null>(null);
   const [transferClient, setTransferClient] = useState<Client | null>(null);
   const [targetOwners, setTargetOwners] = useState<string[]>([]);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [renamingName, setRenamingName] = useState('');
+  const [renamingMonto, setRenamingMonto] = useState(0);
 
   const [searchParams, setSearchParams] = useSearchParams();
   
@@ -92,8 +94,9 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
     e.preventDefault();
     if (!newClientName) return;
     try {
-      await addClient(newClientName);
+      await addClient(newClientName, '', newClientMonto);
       setNewClientName('');
+      setNewClientMonto(0);
       setIsCreatingClient(false);
       setDialog({ type: 'alert', message: `Carpeta "${newClientName}" creada correctamente.` });
     } catch {
@@ -118,12 +121,16 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
     e.preventDefault();
     if (!editingClient || !renamingName.trim()) return;
     try {
-      await updateClient(editingClient.id, { name: renamingName.trim() });
+      await updateClient(editingClient.id, { 
+        name: renamingName.trim(),
+        montoIgualaMensual: renamingMonto
+      });
       setEditingClient(null);
       setRenamingName('');
-      setDialog({ type: 'alert', message: "Nombre de carpeta actualizado correctamente." });
+      setRenamingMonto(0);
+      setDialog({ type: 'alert', message: "Información de carpeta actualizada correctamente." });
     } catch {
-      setDialog({ type: 'alert', message: "Error al renombrar la carpeta." });
+      setDialog({ type: 'alert', message: "Error al actualizar la carpeta." });
     }
   };
 
@@ -367,8 +374,9 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                             onClick={() => {
                               setEditingClient(client);
                               setRenamingName(client.name);
+                              setRenamingMonto(client.montoIgualaMensual || 0);
                             }}
-                            title="Renombrar Carpeta"
+                            title="Editar Carpeta"
                             className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-apc-green transition-all"
                           >
                             <Edit />
@@ -411,6 +419,15 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Histórico</p>
                        <p className="text-lg font-black text-slate-400">{clientODTs.length}</p>
                      </div>
+                     {client.montoIgualaMensual !== undefined && client.montoIgualaMensual > 0 && (
+                       <>
+                        <div className="w-px h-8 bg-slate-100"></div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Iguala</p>
+                          <p className="text-lg font-black text-apc-green">${client.montoIgualaMensual.toLocaleString()}</p>
+                        </div>
+                       </>
+                     )}
                   </div>
                 </div>
 
@@ -436,6 +453,10 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Nombre de Empresa</label>
                   <input autoFocus value={newClientName} onChange={e => setNewClientName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-bold" placeholder="Ejem: Laboratorios Roche S.A." />
                </div>
+               <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Monto de Iguala Mensual ($)</label>
+                  <input type="number" min="0" value={newClientMonto} onChange={e => setNewClientMonto(Number(e.target.value))} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-bold" placeholder="0.00" />
+               </div>
                <div className="flex gap-3 pt-4">
                   <button type="button" onClick={() => setIsCreatingClient(false)} className="flex-1 py-3 text-xs font-black text-slate-400 uppercase hover:text-slate-600">Cancelar</button>
                   <button type="submit" className="flex-1 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all shadow-xl shadow-apc-green/20">CREAR CARPETA</button>
@@ -448,12 +469,16 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
       {editingClient && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
-            <h2 className="text-2xl font-black text-slate-900 mb-2">Renombrar Carpeta</h2>
-            <p className="text-xs text-slate-500 font-medium mb-6">Modifique el nombre de la carpeta maestra.</p>
+            <h2 className="text-2xl font-black text-slate-900 mb-2">Editar Carpeta</h2>
+            <p className="text-xs text-slate-500 font-medium mb-6">Modifique la información de la carpeta maestra.</p>
             <form onSubmit={handleRenameClient} className="space-y-4">
                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Nuevo Nombre</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Nombre de Empresa</label>
                   <input autoFocus value={renamingName} onChange={e => setRenamingName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-bold" placeholder="Nombre de la empresa" />
+               </div>
+               <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Monto de Iguala Mensual ($)</label>
+                  <input type="number" min="0" value={renamingMonto} onChange={e => setRenamingMonto(Number(e.target.value))} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-bold" placeholder="0.00" />
                </div>
                <div className="flex gap-3 pt-4">
                   <button type="button" onClick={() => setEditingClient(null)} className="flex-1 py-3 text-xs font-black text-slate-400 uppercase hover:text-slate-600">Cancelar</button>

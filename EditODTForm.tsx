@@ -2,60 +2,53 @@
 import React, { useState } from 'react';
 import { Editor } from '@tinymce/tinymce-react';
 import { useODT } from './ODTContext';
-import { Client, Project } from './types';
+import { Project } from './types';
 import { Icons } from './constants';
 import { OPERATIVE_AREAS, CATEGORIES_CONFIG } from './workflowConfig';
 import { structureBrief } from './services/geminiService';
 
-interface NewODTFormProps {
-  client: Client;
+interface EditODTFormProps {
+  project: Project;
   onClose: () => void;
 }
 
-const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
-  const { projects, addProject } = useODT();
+const EditODTForm: React.FC<EditODTFormProps> = ({ project, onClose }) => {
+  const { projects, updateFullProject } = useODT();
   const [loading, setLoading] = useState(false);
   const [isFormatting, setIsFormatting] = useState(false);
 
+  // Backwards Compatibility Mapping
+  const initialTipoCargo = project.tipoCargo || (project.facturado ? 'extra' : 'iguala');
+  const initialComplejidad = project.complejidad || 'Media';
+  const initialPaginas = project.paginas_estimadas || 0;
+  const initialMinutos = project.minutos_video_estimados || 0;
+  const initialValorTeorico = project.monto_valor_teorico || 0;
+
+  // Form State
+  const [marca, setMarca] = useState(project.marca || '');
+  const [producto, setProducto] = useState(project.producto || '');
+  const [fechaEntrega, setFechaEntrega] = useState(project.fecha_entrega || '');
+  const [category, setCategory] = useState(project.category || '');
+  const [subCategory, setSubCategory] = useState(project.subCategory || '');
+  const [detalleEntregableCampaña, setDetalleEntregableCampaña] = useState(project.detalleEntregableCampaña || '');
+  const [tipoCargo, setTipoCargo] = useState<'extra' | 'iguala' | 'interno'>(initialTipoCargo);
+  const [monto, setMonto] = useState(project.monto_proyectado || 0);
+  const [montoValorTeorico, setMontoValorTeorico] = useState(initialValorTeorico);
+  const [complejidad, setComplejidad] = useState<'Baja' | 'Media' | 'Alta'>(initialComplejidad);
+  const [paginasEstimadas, setPaginasEstimadas] = useState(initialPaginas);
+  const [minutosVideoEstimados, setMinutosVideoEstimados] = useState(initialMinutos);
+  const [justification, setJustification] = useState(project.justificacion_no_facturado || '');
+  const [selectedAreas, setSelectedAreas] = useState<string[]>(project.areas_seleccionadas || []);
+  const [fechasInternas, setFechasInternas] = useState<Record<string, string>>(project.fechasInternas || {});
+  const [brief, setBrief] = useState(project.brief || '');
+  const [links, setLinks] = useState<string[]>(project.referenceLinks && project.referenceLinks.length > 0 ? project.referenceLinks : ['']);
+
   const existingBrands = Array.from(new Set(
     (projects || [])
-      .filter(p => p.clientId === client.id)
+      .filter(p => p.clientId === project.clientId)
       .map(p => p.marca)
       .filter(Boolean)
   )).sort();
-
-  // Form State
-  const [odtId, setOdtId] = useState('');
-  const [clientName, setClientName] = useState(client.name);
-  const [marca, setMarca] = useState('');
-  const [producto, setProducto] = useState('');
-  const [fechaEntrega, setFechaEntrega] = useState('');
-  const [category, setCategory] = useState('');
-  const [subCategory, setSubCategory] = useState('');
-  const [detalleEntregableCampaña, setDetalleEntregableCampaña] = useState('');
-  const [tipoCargo, setTipoCargo] = useState<'extra' | 'iguala' | 'interno'>('iguala');
-  const [monto, setMonto] = useState(0);
-  const [montoValorTeorico, setMontoValorTeorico] = useState(0);
-  const [complejidad, setComplejidad] = useState<'Baja' | 'Media' | 'Alta'>('Media');
-  const [paginasEstimadas, setPaginasEstimadas] = useState(0);
-  const [minutosVideoEstimados, setMinutosVideoEstimados] = useState(0);
-  const [justification, setJustification] = useState('');
-  const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
-  const [fechasInternas, setFechasInternas] = useState<Record<string, string>>({});
-  const [brief, setBrief] = useState('');
-  const [links, setLinks] = useState<string[]>(['']);
-
-  const generateODTId = React.useCallback(() => {
-    const year = new Date().getFullYear();
-    const count = projects.filter(p => p.id.startsWith(`APC-${year}`)).length + 1;
-    return `APC-${year}-${count.toString().padStart(3, '0')}`;
-  }, [projects]);
-
-  React.useEffect(() => {
-    if (!odtId) {
-      setOdtId(generateODTId());
-    }
-  }, [odtId, generateODTId]);
 
   const handleAddLink = () => setLinks([...links, '']);
   const handleLinkChange = (idx: number, val: string) => {
@@ -118,22 +111,9 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
       return;
     }
 
-    const hasInvalidDates = selectedAreas.some(area => {
-      const internalDate = fechasInternas[area];
-      return !internalDate || (fechaEntrega && internalDate > fechaEntrega);
-    });
-
-    if (hasInvalidDates) {
-      alert("Error: Todas las áreas seleccionadas deben tener un Deadline Interno válido (no posterior a la entrega global).");
-      return;
-    }
-
     setLoading(true);
     try {
-      const newProject: Partial<Project> = {
-        id: odtId,
-        clientId: client.id,
-        empresa: clientName,
+      const updatedProject: Partial<Project> = {
         marca,
         producto,
         fecha_entrega: fechaEntrega,
@@ -149,17 +129,14 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         minutos_video_estimados: minutosVideoEstimados,
         justificacion_no_facturado: tipoCargo !== 'extra' ? justification : '',
         areas_seleccionadas: selectedAreas,
-        assignedExecutives: client.assignedExecutives || [],
         referenceLinks: links.filter(l => l.trim() !== ''),
-        brief,
-        facturado: false,
-        current_stage_index: 0
+        brief
       };
-      await addProject(newProject);
-      alert(`ODT ${newProject.id} creada exitosamente.`);
+      await updateFullProject(project.id, updatedProject);
+      alert(`ODT ${project.id} actualizada exitosamente.`);
       onClose();
     } catch {
-      alert("Error al crear la ODT.");
+      alert("Error al actualizar la ODT.");
     } finally {
       setLoading(false);
     }
@@ -170,8 +147,8 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
       <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn relative z-[1010]">
         <header className="bg-apc-green p-6 flex justify-between items-center text-white">
           <div>
-            <h2 className="text-xl font-black tracking-tight">Apertura de ODT Master</h2>
-            <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mt-1">ISO 9001:2015 - Carpeta: {client.name}</p>
+            <h2 className="text-xl font-black tracking-tight">Edición de ODT Master</h2>
+            <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mt-1">ISO 9001:2015 - ODT: {project.id}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-all">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -179,17 +156,6 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         </header>
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Número de ODT</label>
-              <input required value={odtId} onChange={e => setOdtId(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-mono font-black text-apc-pink" placeholder="Ej: APC-2024-001" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</label>
-              <input required value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" placeholder="Nombre del cliente..." />
-            </div>
-          </section>
-
           <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Marca o Producto</label>
@@ -287,16 +253,12 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
                         {isInvalid && (
                           <p className="text-[8px] text-red-500 font-bold uppercase tracking-tighter mt-1">⚠️ posterior a entrega global</p>
                         )}
-                        {!fechaEntrega && (
-                          <p className="text-[7px] text-amber-500 font-bold uppercase tracking-tighter italic">Define fecha global primero</p>
-                        )}
                       </div>
                     )}
                   </div>
                 );
               })}
              </div>
-             <p className="text-[9px] text-slate-400 font-bold uppercase italic mt-1">* Se insertará automáticamente un gate de REVISIÓN QA tras completar cada área técnica.</p>
           </section>
 
           <section className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-100 contents-section">
@@ -366,7 +328,6 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
           <section className="space-y-4">
              <div className="flex justify-between items-center">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brief Maestro y Requerimientos</label>
-                <span className="text-[9px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded font-black">SOPORTA TABLAS EXCEL/WORD</span>
              </div>
              <div className="bg-white rounded-xl border overflow-hidden">
                 <Editor
@@ -399,16 +360,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
                         }
                       });
                     },
-                    table_default_attributes: {
-                      border: '1'
-                    },
-                    table_default_styles: {
-                      'border-collapse': 'collapse',
-                      'width': 'auto',
-                      'margin-left': '0',
-                      'margin-right': 'auto'
-                    },
-                    content_style: 'body { font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:14px; margin: 1rem; } table { border-collapse: collapse; margin-left: 0 !important; margin-right: auto !important; } td, th { border: 1px solid #ccc; padding: 4px; }',
+                    content_style: 'body { font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:14px; margin: 1rem; }',
                     paste_data_images: true,
                     promotion: false,
                     branding: false
@@ -449,7 +401,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
           <footer className="pt-8 border-t flex justify-end gap-3">
              <button type="button" onClick={onClose} className="px-6 py-3 text-xs font-black text-slate-500 hover:text-slate-900 transition-all uppercase">Cancelar</button>
              <button disabled={loading} type="submit" className="px-10 py-3 bg-apc-green text-white text-xs font-black rounded-xl hover:bg-apc-green/80 transition-all shadow-xl disabled:opacity-50">
-               {loading ? 'REGISTRANDO...' : 'CREAR ODT MASTER'}
+               {loading ? 'GUARDANDO...' : 'GUARDAR CAMBIOS'}
              </button>
           </footer>
         </form>
@@ -458,4 +410,4 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
   );
 };
 
-export default NewODTForm;
+export default EditODTForm;

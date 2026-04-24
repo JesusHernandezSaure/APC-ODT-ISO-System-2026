@@ -374,6 +374,15 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateFullProject = async (projectId: string, projectData: Partial<Project>) => {
+    if (!db || !user) return;
+    const updates = {
+      ...projectData,
+      updatedAt: new Date().toISOString()
+    };
+    await update(ref(db, `projects/${projectId}`), updates);
+  };
+
   const removeProject = async (projectId: string, reason?: string) => {
     if (!db || !user || (user.role !== UserRole.Admin && user.role !== UserRole.Cuentas_Lider)) return;
     try {
@@ -1507,14 +1516,16 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       submitForPresentation,
       processClientFeedback,
       updateBilling, updatePaymentStatus,
+      updateFullProject,
       checkSLA, delegateProject, reassignProjectAndFolder, 
-      addClient: async (n, notes) => {
+      addClient: async (n, notes, montoIgualaMensual) => {
         if (!db || !user) return;
         const clientId = `CL-${Date.now()}`;
         await set(ref(db, `clients/${clientId}`), { 
           id: clientId, 
           name: n.trim(), 
           notes: notes || '', 
+          montoIgualaMensual: montoIgualaMensual || 0,
           assignedExecutives: [user.id], 
           createdAt: new Date().toISOString() 
         });

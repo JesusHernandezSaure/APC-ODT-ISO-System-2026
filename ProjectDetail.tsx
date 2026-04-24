@@ -7,6 +7,7 @@ import { Project, UserRole, Material, User } from './types';
 import { Icons } from './constants';
 import { auditProjectISO } from './services/geminiService';
 import { calculateRoadmap, GLOBAL_STAGES, getPriorityInfo, OPERATIVE_AREAS, normalizeString } from './workflowConfig';
+import EditODTForm from './EditODTForm';
 
 interface ProjectDetailProps {
   project: Project;
@@ -60,6 +61,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [showAreasModal, setShowAreasModal] = useState(false);
   const [showFastTrackModal, setShowFastTrackModal] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const [showEarlyCloseModal, setShowEarlyCloseModal] = useState(false);
   const [earlyCloseMotivo, setEarlyCloseMotivo] = useState('Cambio mínimo entregado a cliente');
   const [earlyCloseExplicacion, setEarlyCloseExplicacion] = useState('');
@@ -648,13 +650,22 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             {/* Botones de Acción */}
             <div className="flex flex-col gap-2 w-full mt-2">
               {isAccountOwnerOrLeader && (
-                <button 
-                  onClick={() => setShowDatePicker(true)}
-                  className="px-4 py-2.5 bg-apc-pink text-white rounded-2xl hover:bg-apc-pink/90 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-apc-pink/20 border border-white/10"
-                >
+                <>
+                  <button 
+                    onClick={() => setShowEditForm(true)}
+                    className="px-4 py-2.5 bg-white text-apc-green rounded-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl border border-white/20"
+                  >
+                    <Icons.Edit className="w-4 h-4" />
+                    Editar ODT Master
+                  </button>
+                  <button 
+                    onClick={() => setShowDatePicker(true)}
+                    className="px-4 py-2.5 bg-apc-pink text-white rounded-2xl hover:bg-apc-pink/90 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-apc-pink/20 border border-white/10"
+                  >
                   <Icons.Calendar className="w-4 h-4" />
                   Cambiar Fecha
                 </button>
+                </>
               )}
               {canDeleteODT && (
                 <button 
@@ -668,6 +679,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             </div>
           </div>
         </header>
+
+        {showEditForm && (
+          <EditODTForm project={project} onClose={() => setShowEditForm(false)} />
+        )}
       </div>
 
         {/* Alertas de Escalación */}

@@ -180,6 +180,61 @@ const AgencyHubODTDetail: React.FC = () => {
 
                 {/* Right Column: Interaction / Material */}
                 <div className="md:col-span-2 space-y-6">
+                    {/* Briefing del Proyecto Section */}
+                    <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                        <h3 className="text-sm font-black text-slate-800 mb-4 border-b border-slate-200 pb-2 flex items-center gap-2 uppercase tracking-widest">
+                            <Icons.Project className="w-4 h-4 text-apc-pink" /> Briefing del Proyecto
+                        </h3>
+                        
+                        <div className="flex flex-col gap-4">
+                            {/* Descripción Detallada */}
+                            {project.comentariosCliente && (
+                                <div>
+                                    <p className="text-[10px] text-apc-pink font-black uppercase tracking-wider mb-1">Descripción Detallada</p>
+                                    <p className="text-slate-700 text-xs whitespace-pre-wrap font-medium">{project.comentariosCliente}</p>
+                                </div>
+                            )}
+
+                            {/* Objetivo */}
+                            {project.objetivo && (
+                                <div>
+                                    <p className="text-[10px] text-apc-pink font-black uppercase tracking-wider mb-1">Objetivo</p>
+                                    <p className="text-slate-700 text-xs font-medium">{project.objetivo}</p>
+                                </div>
+                            )}
+
+                            {/* Posicionamiento */}
+                            {project.posicionamiento && (
+                                <div>
+                                    <p className="text-[10px] text-apc-pink font-black uppercase tracking-wider mb-1">Posicionamiento</p>
+                                    <p className="text-slate-700 text-xs font-medium">{project.posicionamiento}</p>
+                                </div>
+                            )}
+
+                            {/* Insights Clave */}
+                            {project.insights && (
+                                <div>
+                                    <p className="text-[10px] text-apc-pink font-black uppercase tracking-wider mb-1">Insights Clave</p>
+                                    <p className="text-slate-700 text-xs font-medium">{project.insights}</p>
+                                </div>
+                            )}
+
+                            {/* Referencias */}
+                            {project.referencias && (
+                                <div>
+                                    <p className="text-[10px] text-apc-pink font-black uppercase tracking-wider mb-1">Referencias / Materiales</p>
+                                    {project.referencias.includes('http') ? (
+                                        <a href={project.referencias} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline text-xs font-bold break-all">
+                                            {project.referencias}
+                                        </a>
+                                    ) : (
+                                        <p className="text-slate-700 text-xs font-medium">{project.referencias}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     {/* Material Viewer Card */}
                     <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden">
                         <div className="p-8 space-y-8">

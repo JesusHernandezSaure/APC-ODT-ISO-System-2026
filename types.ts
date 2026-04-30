@@ -111,6 +111,11 @@ export interface Project {
   detalleEntregableCampaña?: string;
   estadoPorArea?: Record<string, 'En Proceso' | 'En QA' | 'Aprobado QA' | 'Rechazado QA'>;
   client_standby_periods?: { start: string; end?: string }[];
+  // Strategic briefing fields
+  objetivo?: string;
+  posicionamiento?: string;
+  insights?: string;
+  referencias?: string;
   // New quality control fields
   accounts_approval_ok?: boolean;
   presentation_link?: string;

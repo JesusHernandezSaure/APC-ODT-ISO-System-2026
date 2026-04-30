@@ -18,7 +18,11 @@ const AgencyHubView: React.FC = () => {
     marca: '',
     tipoMaterial: '',
     campana: '',
-    descripcion: ''
+    descripcion: '',
+    objetivo: '',          // NUEVO
+    posicionamiento: '',   // NUEVO
+    insights: '',          // NUEVO
+    referencias: ''        // NUEVO
   });
 
   // Filter projects by assigned brands
@@ -75,6 +79,10 @@ const AgencyHubView: React.FC = () => {
         tipoMaterial: formSolicitud.tipoMaterial,
         producto: formSolicitud.campana,
         comentariosCliente: formSolicitud.descripcion,
+        objetivo: formSolicitud.objetivo,               // NUEVO
+        posicionamiento: formSolicitud.posicionamiento, // NUEVO
+        insights: formSolicitud.insights,               // NUEVO
+        referencias: formSolicitud.referencias,         // NUEVO
         etapa_actual: 'Nueva Solicitud Cliente',
         etapaActual: 'Nueva Solicitud Cliente',
         status: 'Borrador',
@@ -99,7 +107,10 @@ const AgencyHubView: React.FC = () => {
       
       alert("Solicitud enviada exitosamente. Tu ejecutivo la revisará pronto.");
       setIsModalOpen(false);
-      setFormSolicitud({ marca: '', tipoMaterial: '', campana: '', descripcion: '' });
+      setFormSolicitud({ 
+        marca: '', tipoMaterial: '', campana: '', descripcion: '',
+        objetivo: '', posicionamiento: '', insights: '', referencias: '' 
+      });
     } catch (error) {
       console.error("Error al crear solicitud:", error);
       alert("Error al enviar la solicitud. Por favor intenta de nuevo.");
@@ -334,8 +345,20 @@ const AgencyHubView: React.FC = () => {
 
       {/* Modal Nueva ODT (Pre-armado) */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[1000] p-4">
-          <div className="bg-white p-8 rounded-3xl w-full max-w-lg shadow-2xl animate-fadeIn">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-start z-[1000] p-4 pt-[95px]"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsModalOpen(false);
+          }}
+        >
+          <div className="bg-white p-8 rounded-3xl w-full max-w-lg shadow-2xl animate-fadeIn max-h-[calc(100vh-120px)] overflow-y-auto relative">
+            <button 
+              onClick={() => setIsModalOpen(false)}
+              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-all"
+              title="Cerrar"
+            >
+              <Icons.Plus className="w-5 h-5 rotate-45" />
+            </button>
             <h2 className="text-2xl font-black text-slate-800 mb-2">Nueva Solicitud de ODT</h2>
             <p className="text-sm text-slate-500 font-medium mb-6">Completa los datos para iniciar un nuevo proyecto.</p>
             
@@ -391,12 +414,60 @@ const AgencyHubView: React.FC = () => {
               <div className="space-y-1">
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción Detallada *</label>
                 <textarea 
-                  required rows={4} 
+                  required rows={3} 
                   className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all resize-none"
                   placeholder="Describe de forma extensa el material o campaña que estás solicitando..."
                   value={formSolicitud.descripcion}
                   onChange={(e) => setFormSolicitud({...formSolicitud, descripcion: e.target.value})}
                 ></textarea>
+              </div>
+
+               {/* Objetivo */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Objetivo de la Campaña / Material *</label>
+                <input 
+                  type="text" required 
+                  placeholder="Ej: Aumentar el conocimiento del producto en..." 
+                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
+                  value={formSolicitud.objetivo}
+                  onChange={(e) => setFormSolicitud({...formSolicitud, objetivo: e.target.value})}
+                />
+              </div>
+
+              {/* Posicionamiento */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Posicionamiento *</label>
+                <input 
+                  type="text" required 
+                  placeholder="Ej: El único tratamiento de una sola dosis..." 
+                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
+                  value={formSolicitud.posicionamiento}
+                  onChange={(e) => setFormSolicitud({...formSolicitud, posicionamiento: e.target.value})}
+                />
+              </div>
+
+              {/* Insights Clave */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Insights Clave del Producto</label>
+                <textarea 
+                  rows={2} 
+                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all resize-none"
+                  placeholder="Ej: Los pacientes prefieren tratamientos sin sabor..."
+                  value={formSolicitud.insights}
+                  onChange={(e) => setFormSolicitud({...formSolicitud, insights: e.target.value})}
+                ></textarea>
+              </div>
+
+              {/* Referencias o Materiales */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Referencias o Materiales (Links)</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: Drive con logotipos o manual de marca..." 
+                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
+                  value={formSolicitud.referencias}
+                  onChange={(e) => setFormSolicitud({...formSolicitud, referencias: e.target.value})}
+                />
               </div>
 
               {/* Botones de acción del Modal */}

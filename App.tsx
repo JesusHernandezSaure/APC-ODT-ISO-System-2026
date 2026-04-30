@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { UserRole, ViewState, User } from './types';
+import { UserRole, ViewState, User, Project, ProjectComment, ProjectAssignment } from './types';
 import { Icons } from './constants';
 import { ODTProvider, useODT } from './ODTContext';
 import { AppRouter } from './AppRouter';
@@ -13,6 +13,8 @@ import UsersView from './UsersView';
 import VirtualAuditor from './VirtualAuditor';
 import CommercialIntelligence from './CommercialIntelligence';
 import MedicalUserManual from './MedicalUserManual';
+import AgencyHubView from './AgencyHubView';
+import AgencyHubODTDetail from './AgencyHubODTDetail';
 import { db } from './firebase';
 import { ProjectTable } from './ProjectTable';
 import { normalizeString, GLOBAL_STAGES } from './workflowConfig';
@@ -20,8 +22,9 @@ import { normalizeString, GLOBAL_STAGES } from './workflowConfig';
 import ErrorBoundary from './ErrorBoundary';
 
 import { CalendarView } from './CalendarView';
+import { useCallback } from 'react';
 
-const exportMasterCSV = (projects: any[], users: any[]) => {
+const exportMasterCSV = (projects: Project[], users: User[]) => {
   const headers = [
     "ID ODT", "Cliente", "Marca", "Producto", "Categoría", "Subcategoría", 
     "Fecha Creación", "Fecha Entrega (Prometida)", "Fecha Finalizado (Real)", 
@@ -51,16 +54,15 @@ const exportMasterCSV = (projects: any[], users: any[]) => {
     const numAreas = p.areas_seleccionadas?.length || 1;
     const costPerArea = (p.monto_proyectado || 0) / numAreas;
 
-    const qaRejections = p.comentarios?.filter((c: any) => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0;
+    const qaRejections = p.comentarios?.filter((c: ProjectComment) => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0;
     const clientRejections = p.client_rejection_count || 0;
     
-    const approvers = p.comentarios?.filter((c: any) => c.isSystemEvent && c.text.includes("APROBADO"))
-      .map((c: any) => `${c.authorName} (${c.text.split(' ')[0]})`)
+    const approvers = p.comentarios?.filter((c: ProjectComment) => c.isSystemEvent && c.text.includes("APROBADO"))
+      .map((c: ProjectComment) => `${c.authorName} (${c.text.split(' ')[0]})`)
       .join(" | ") || "N/A";
 
-    interface User { id: string; name: string; }
-    const assignments = p.asignaciones?.map((a: any) => {
-      const assignedUsers = users.filter((user: User) => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id);
+    const assignments = p.asignaciones?.map((a: ProjectAssignment) => {
+      const assignedUsers = users.filter((u: User) => a.usuarioIds?.includes(u.id) || a.usuarioId === u.id);
       const names = assignedUsers.map(u => u.name).join(", ");
       return `${a.area}: ${names || 'Pte'}`;
     }).join(" | ") || "N/A";
@@ -175,9 +177,11 @@ const AppContent: React.FC = () => {
     }
 
     switch (view) {
+      case 'agency-hub': return <AgencyHubView />;
+      case 'agency-hub-odt-detail': return <AgencyHubODTDetail />;
       case 'dashboard': 
         if (canAccessAdminDashboard(user)) return <AdminDashboard />;
-        return <Navigate to="/my-projects" replace />;
+        return <Navigate to={user?.role === UserRole.Cliente ? "/agency-hub" : "/my-projects"} replace />;
       case 'leader-dashboard': return <LeaderDashboard onViewProject={onViewProject} />;
       case 'my-projects': return <MyInbox onViewProject={onViewProject} />;
       case 'clients': return <ClientsView onViewProject={onViewProject} />;
@@ -234,13 +238,13 @@ const Finances: React.FC<{ onViewProject: (id: string) => void, onExport: () => 
   const normalizedSearch = searchTerm.toLowerCase().trim();
 
   // Helper for date filtering
-  const isInSelectedPeriod = (dateStr?: string) => {
+  const isInSelectedPeriod = useCallback((dateStr?: string) => {
     if (!dateStr) return false;
     const date = new Date(dateStr);
     const m = (date.getMonth() + 1).toString();
     const y = date.getFullYear().toString();
     return m === selectedMonth && y === selectedYear;
-  };
+  }, [selectedMonth, selectedYear]);
 
   // Tab 1: Igualas del Mes
   const filteredIgualas = useMemo(() => {
@@ -265,7 +269,7 @@ const Finances: React.FC<{ onViewProject: (id: string) => void, onExport: () => 
         p.id, p.empresa, p.marca, p.producto, p.category, p.subCategory, p.monto_proyectado?.toString()
       ].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch);
     });
-  }, [projects, normalizedSearch, selectedMonth, selectedYear]);
+  }, [projects, normalizedSearch, isInSelectedPeriod]);
 
   // Tab 3: Rentabilidad
   const profitabilityData = useMemo(() => {
@@ -296,7 +300,7 @@ const Finances: React.FC<{ onViewProject: (id: string) => void, onExport: () => 
         if (!normalizedSearch) return true;
         return [c.name].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch);
       });
-  }, [clients, projects, normalizedSearch, selectedMonth, selectedYear]);
+  }, [clients, projects, normalizedSearch, isInSelectedPeriod]);
 
   const noResults = (activeTab === 'igualas' && filteredIgualas.length === 0) ||
                     (activeTab === 'extra' && filteredExtra.length === 0) ||

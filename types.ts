@@ -11,12 +11,14 @@ export enum UserRole {
   Medico_Opera = 'Medico_Opera',
   Finanzas = 'Finanzas',
   Administracion_Lider = 'Administracion_Lider',
-  Administracion_Opera = 'Administracion_Opera'
+  Administracion_Opera = 'Administracion_Opera',
+  Cliente = 'Cliente'
 }
 
 export interface User {
   id: string; 
   name: string;
+  nombreCompleto?: string;
   username: string;
   password?: string;
   department: string;
@@ -24,6 +26,15 @@ export interface User {
   roles?: UserRole[];
   active: boolean;
   createdAt?: string;
+  // Client Portal Fields
+  marcasAsignadas?: string[];
+  // Executive Public Profile
+  fotoUrl?: string;
+  telefonoPublico?: string;
+  puestoPublico?: string;
+  emailPublico?: string;
+  tutorialDashboardVisto?: boolean;
+  tutorialDetalleVisto?: boolean;
 }
 
 export interface ProjectComment {
@@ -91,6 +102,10 @@ export interface Project {
   last_delivery_link?: string;
   last_delivery_comment?: string;
   delivery_history?: { link: string; comment: string; area: string; date: string; authorId: string; authorName: string }[];
+  client_rejection_count?: number;
+  client_feedback?: string;
+  correction_count_after_presentation?: number;
+  enStandby?: boolean;
   // Campaign Mode fields
   esCampana?: boolean;
   detalleEntregableCampaña?: string;
@@ -158,7 +173,8 @@ export type ViewState =
   | 'auditor'
   | 'commercial-intelligence'
   | 'medical-manual'
-  | 'deleted-projects';
+  | 'deleted-projects'
+  | 'agency-hub';
 
 export interface LoginResult {
   success: boolean;

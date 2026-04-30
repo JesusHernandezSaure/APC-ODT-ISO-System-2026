@@ -231,13 +231,22 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // SLA and Priority Background Check
+  const lastAlertCheck = useRef<number>(0);
+
   useEffect(() => {
     if (!user || projects.length === 0 || !db) return;
 
     const checkAlerts = async () => {
+      // Cooldown to prevent rapid repeated checks (e.g., every 5 minutes is enough for 3-day SLA)
+      const nowTime = Date.now();
+      if (nowTime - lastAlertCheck.current < 5 * 60 * 1000) return;
+      lastAlertCheck.current = nowTime;
+
       const now = new Date();
+      const sentThisRun = new Set<string>(); // "userId:projectId:type"
+
       for (const p of projects) {
-        if (p.status === 'Finalizado' || p.status === 'Cancelado') continue;
+        if (p.status === 'Finalizado' || p.status === 'Cancelado' || p.enStandby) continue;
 
         // 1. SLA Check (Estancamiento)
         const lastUpdate = new Date(p.updatedAt || p.createdAt);
@@ -250,9 +259,22 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (currentAssignment) {
             const assignedIds = currentAssignment.usuarioIds || (currentAssignment.usuarioId ? [currentAssignment.usuarioId] : []);
-            for (const uid of assignedIds) {
-              const alreadyNotified = notifications.some(n => n.userId === uid && n.projectId === p.id && n.type === 'sla_alert');
+            // Use a Set to avoid duplicates in assignment list itself
+            const uniqueAssignedIds = Array.from(new Set(assignedIds));
+            
+            for (const uid of uniqueAssignedIds) {
+              const trackingKey = `${uid}:${p.id}:sla_alert`;
+              if (sentThisRun.has(trackingKey)) continue;
+
+              const alreadyNotified = notifications.some(n => 
+                n.userId === uid && 
+                n.projectId === p.id && 
+                n.type === 'sla_alert' &&
+                !n.title.includes('RETRASO EN ÁREA') // Ensure we don't mix with leader alert
+              );
+
               if (!alreadyNotified) {
+                sentThisRun.add(trackingKey);
                 await createNotification({
                   userId: uid,
                   title: '⚠️ ALERTA DE SLA (3 DÍAS)',
@@ -264,17 +286,31 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
 
-          const areaLeader = users.find(u => u.department === currentArea && (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider));
+          const areaLeader = users.find(u => 
+            u.department === currentArea && 
+            (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider)
+          );
+
           if (areaLeader) {
-            const alreadyNotified = notifications.some(n => n.userId === areaLeader.id && n.projectId === p.id && n.type === 'sla_alert' && n.title.includes('RETRASO EN ÁREA'));
-            if (!alreadyNotified) {
-              await createNotification({
-                userId: areaLeader.id,
-                title: '🚨 RETRASO EN ÁREA (SLA 3D)',
-                message: `La ODT ${p.id} lleva estancada 3 días en tu área (${currentArea}).`,
-                type: 'sla_alert',
-                projectId: p.id
-              });
+            const trackingKey = `${areaLeader.id}:${p.id}:sla_leader_alert`;
+            if (!sentThisRun.has(trackingKey)) {
+              const alreadyNotified = notifications.some(n => 
+                n.userId === areaLeader.id && 
+                n.projectId === p.id && 
+                n.type === 'sla_alert' && 
+                n.title.includes('RETRASO EN ÁREA')
+              );
+
+              if (!alreadyNotified) {
+                sentThisRun.add(trackingKey);
+                await createNotification({
+                  userId: areaLeader.id,
+                  title: '🚨 RETRASO EN ÁREA (SLA 3D)',
+                  message: `La ODT ${p.id} lleva estancada 3 días en tu área (${currentArea}).`,
+                  type: 'sla_alert',
+                  projectId: p.id
+                });
+              }
             }
           }
         }
@@ -289,9 +325,17 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const alertTitle = `⚠️ PRIORIDAD ${priority.text.toUpperCase()} (${alertType.toUpperCase()})`;
               
               for (const execId of p.assignedExecutives) {
-                const alreadyNotified = notifications.some(n => n.userId === execId && n.projectId === p.id && n.title === alertTitle);
+                const trackingKey = `${execId}:${p.id}:priority_alert_${priority.level}`;
+                if (sentThisRun.has(trackingKey)) continue;
+
+                const alreadyNotified = notifications.some(n => 
+                  n.userId === execId && 
+                  n.projectId === p.id && 
+                  n.title === alertTitle
+                );
                 
                 if (!alreadyNotified) {
+                  sentThisRun.add(trackingKey);
                   await createNotification({
                     userId: execId,
                     title: alertTitle,
@@ -307,7 +351,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    const timer = setTimeout(checkAlerts, 10000); // Check 10 seconds after load
+    // Check after 5 seconds of initial load
+    const timer = setTimeout(checkAlerts, 5000); 
     return () => clearTimeout(timer);
   }, [user, projects, users, notifications]);
 
@@ -1510,7 +1555,52 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <ODTContext.Provider value={{ 
       user, projects, deletedProjects, clients, users, notifications, loading, isInitialLoad, isLoggingIn, login, logout, 
       isAlertsOpen, setIsAlertsOpen,
-      updateProjectStatus: async () => {}, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
+      updateProjectStatus: async (projectId: string, newStatus: Project['status'], comment: string) => {
+        if (!db || !user) return;
+        const project = projects.find(p => p.id === projectId);
+        if (!project) return;
+
+        const now = new Date().toISOString();
+        const systemComment: ProjectComment = {
+          id: `sys-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: comment,
+          createdAt: now,
+          isSystemEvent: true
+        };
+
+        const updates: Record<string, unknown> = {
+          status: newStatus,
+          updatedAt: now,
+          comentarios: [systemComment, ...(project.comentarios || [])],
+          comentariosCliente: comment, // NEW FIELD AS REQUESTED
+        };
+
+        // If it's becoming finalized or corrections, handle enStandby
+        if (newStatus === 'Finalizado' || newStatus === 'Correcciones') {
+          updates.enStandby = false;
+          const periods = [...(project.client_standby_periods || [])];
+          if (periods.length > 0 && !periods[periods.length - 1].end) {
+            periods[periods.length - 1].end = now;
+          }
+          updates.client_standby_periods = periods;
+        }
+
+        // Handle Rejection from Client specific logic if needed
+        if (comment.includes('SOLICITÓ CAMBIOS')) {
+          updates.etapa_actual = 'Cuentas';
+          updates.etapaActual = 'Cuentas';
+          // Move stage index back if possible
+          const stages = calculateRoadmap(project.areas_seleccionadas || []);
+          const countsIndex = stages.indexOf('Cuentas');
+          if (countsIndex !== -1) {
+            updates.current_stage_index = countsIndex;
+          }
+        }
+
+        await update(ref(db, `projects/${projectId}`), updates);
+      }, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
       processQA, 
       processAccountsReview,
       submitForPresentation,

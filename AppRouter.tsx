@@ -137,6 +137,7 @@ export const AppRouter: React.FC<{
     });
   };
 
+
   useEffect(() => {
     if (!user) {
       if (location.pathname !== '/login') {
@@ -158,7 +159,9 @@ export const AppRouter: React.FC<{
       
       const hasRole = (r: UserRole) => user.role === r || (user.roles && user.roles.includes(r));
 
-      if (canAccessAdminDashboard(user)) {
+      if (user.role === UserRole.Cliente) {
+        nextPath = '/agency-hub';
+      } else if (canAccessAdminDashboard(user)) {
         nextPath = '/dashboard-adm';
       } else if (isLeader(user)) {
         nextPath = '/leader-dashboard';
@@ -201,6 +204,53 @@ export const AppRouter: React.FC<{
     return false;
   };
 
+  if (user.role === UserRole.Cliente) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        {/* Top Bar for Clients */}
+        <header className="h-20 bg-apc-green flex items-center justify-between px-6 md:px-10 shadow-lg relative z-50">
+          <div className="absolute top-0 right-0 w-32 h-full bg-striped-green opacity-5 pointer-events-none"></div>
+          <div className="flex items-center gap-4">
+            <Pill size="sm" />
+            <div className="flex flex-col">
+              <h1 className="text-white font-black tracking-tighter leading-none text-xl">APC <span className="text-apc-pink">Agency Hub</span></h1>
+              <span className="text-white/60 text-[8px] font-black uppercase tracking-[0.2em]">Portal de Colaboración</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-6">
+            <div className="hidden md:block text-right">
+               <p className="text-white text-xs font-black">{user.name}</p>
+               <p className="text-[9px] text-white/50 font-black uppercase tracking-widest">{user.username}</p>
+            </div>
+            <button 
+              onClick={logout}
+              className="px-6 py-2 bg-white/10 hover:bg-apc-pink text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/10 hover:border-apc-pink"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 relative">
+          <div className="absolute inset-0 pointer-events-none opacity-[0.02] bg-striped-green"></div>
+          <div className="relative z-10">
+            <Routes>
+              <Route path="/agency-hub" element={renderView('agency-hub')} />
+              <Route path="/agency-hub/odt/:id" element={renderView('agency-hub-odt-detail')} />
+              <Route path="*" element={<Navigate to="/agency-hub" replace />} />
+            </Routes>
+          </div>
+        </main>
+        
+        <footer className="py-6 border-t border-slate-200 text-center bg-white">
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">APC Publicidad © 2026 • Sistema de Control de ODTs</p>
+        </footer>
+        <HelpChatbot />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       {/* Mobile Menu Toggle */}
@@ -240,23 +290,29 @@ export const AppRouter: React.FC<{
         </div>
 
         <nav className="flex flex-col gap-1 flex-1 relative z-10">
-          {canAccessAdminDashboard(user) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={isModuleActive('/dashboard-adm')} isCollapsed={isCollapsed} onClick={() => { navigate('/dashboard-adm'); setIsMobileMenuOpen(false); }} />}
-          {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={isModuleActive('/leader-dashboard')} isCollapsed={isCollapsed} onClick={() => { navigate('/leader-dashboard'); setIsMobileMenuOpen(false); }} />}
-          {canSee([UserRole.Cuentas_Opera, UserRole.Cuentas_Lider, UserRole.Admin]) && <SidebarItem icon={<Icons.Clients />} label="Clientes / Archivo" active={isModuleActive('/clients')} isCollapsed={isCollapsed} onClick={() => { navigate('/clients'); setIsMobileMenuOpen(false); }} />}
-          {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.Admin, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={isModuleActive('/my-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/my-projects'); setIsMobileMenuOpen(false); }} />}
-          {canSeeQA && <SidebarItem icon={<Icons.Ai />} label="Caja de QA" active={isModuleActive('/qa-box')} isCollapsed={isCollapsed} onClick={() => { navigate('/qa-box'); setIsMobileMenuOpen(false); }} />}
-          <SidebarItem icon={<Icons.Calendar />} label="Calendario" active={isModuleActive('/calendar')} isCollapsed={isCollapsed} onClick={() => { navigate('/calendar'); setIsMobileMenuOpen(false); }} />
-          {(user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas || user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider) ? <SidebarItem icon={<Icons.Clients />} label="Facturación" active={isModuleActive('/finances')} isCollapsed={isCollapsed} onClick={() => { navigate('/finances'); setIsMobileMenuOpen(false); }} /> : null}
-          {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Users />} label="Usuarios" active={isModuleActive('/users')} isCollapsed={isCollapsed} onClick={() => { navigate('/users'); setIsMobileMenuOpen(false); }} />}
-          {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Trash />} label="ODTs Eliminadas" active={isModuleActive('/deleted-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/deleted-projects'); setIsMobileMenuOpen(false); }} />}
-          {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera || user.department === 'Administración' || user.department === 'Finanzas') && (
-            <SidebarItem icon={<Icons.TrendingUp />} label="Inteligencia" active={isModuleActive('/commercial-intelligence')} isCollapsed={isCollapsed} onClick={() => { navigate('/commercial-intelligence'); setIsMobileMenuOpen(false); }} />
-          )}
-          {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.department === 'Administración' || user.department === 'Finanzas') && (
-            <SidebarItem icon={<Icons.Ai />} label="Auditor Virtual" active={isModuleActive('/auditor')} isCollapsed={isCollapsed} onClick={() => { navigate('/auditor'); setIsMobileMenuOpen(false); }} />
-          )}
-          {(user.role === UserRole.Medico_Lider || user.role === UserRole.Medico_Opera || user.role === UserRole.Admin) && (
-            <SidebarItem icon={<Icons.Project />} label="Manual Médico" active={isModuleActive('/medical-manual')} isCollapsed={isCollapsed} onClick={() => { navigate('/medical-manual'); setIsMobileMenuOpen(false); }} />
+          {user.role === UserRole.Cliente ? (
+            <SidebarItem icon={<Icons.Dashboard />} label="Agency Hub" active={isModuleActive('/agency-hub')} isCollapsed={isCollapsed} onClick={() => { navigate('/agency-hub'); setIsMobileMenuOpen(false); }} />
+          ) : (
+            <>
+              {canAccessAdminDashboard(user) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={isModuleActive('/dashboard-adm')} isCollapsed={isCollapsed} onClick={() => { navigate('/dashboard-adm'); setIsMobileMenuOpen(false); }} />}
+              {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={isModuleActive('/leader-dashboard')} isCollapsed={isCollapsed} onClick={() => { navigate('/leader-dashboard'); setIsMobileMenuOpen(false); }} />}
+              {canSee([UserRole.Cuentas_Opera, UserRole.Cuentas_Lider, UserRole.Admin]) && <SidebarItem icon={<Icons.Clients />} label="Clientes / Archivo" active={isModuleActive('/clients')} isCollapsed={isCollapsed} onClick={() => { navigate('/clients'); setIsMobileMenuOpen(false); }} />}
+              {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.Admin, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={isModuleActive('/my-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/my-projects'); setIsMobileMenuOpen(false); }} />}
+              {canSeeQA && <SidebarItem icon={<Icons.Ai />} label="Caja de QA" active={isModuleActive('/qa-box')} isCollapsed={isCollapsed} onClick={() => { navigate('/qa-box'); setIsMobileMenuOpen(false); }} />}
+              <SidebarItem icon={<Icons.Calendar />} label="Calendario" active={isModuleActive('/calendar')} isCollapsed={isCollapsed} onClick={() => { navigate('/calendar'); setIsMobileMenuOpen(false); }} />
+              {(user.department === 'Finanzas' || user.department === 'Administración' || user.role === UserRole.Finanzas || user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider) ? <SidebarItem icon={<Icons.Clients />} label="Facturación" active={isModuleActive('/finances')} isCollapsed={isCollapsed} onClick={() => { navigate('/finances'); setIsMobileMenuOpen(false); }} /> : null}
+              {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Users />} label="Usuarios" active={isModuleActive('/users')} isCollapsed={isCollapsed} onClick={() => { navigate('/users'); setIsMobileMenuOpen(false); }} />}
+              {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Trash />} label="ODTs Eliminadas" active={isModuleActive('/deleted-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/deleted-projects'); setIsMobileMenuOpen(false); }} />}
+              {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera || user.department === 'Administración' || user.department === 'Finanzas') && (
+                <SidebarItem icon={<Icons.TrendingUp />} label="Inteligencia" active={isModuleActive('/commercial-intelligence')} isCollapsed={isCollapsed} onClick={() => { navigate('/commercial-intelligence'); setIsMobileMenuOpen(false); }} />
+              )}
+              {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.department === 'Administración' || user.department === 'Finanzas') && (
+                <SidebarItem icon={<Icons.Ai />} label="Auditor Virtual" active={isModuleActive('/auditor')} isCollapsed={isCollapsed} onClick={() => { navigate('/auditor'); setIsMobileMenuOpen(false); }} />
+              )}
+              {(user.role === UserRole.Medico_Lider || user.role === UserRole.Medico_Opera || user.role === UserRole.Admin) && (
+                <SidebarItem icon={<Icons.Project />} label="Manual Médico" active={isModuleActive('/medical-manual')} isCollapsed={isCollapsed} onClick={() => { navigate('/medical-manual'); setIsMobileMenuOpen(false); }} />
+              )}
+            </>
           )}
         </nav>
         
@@ -295,20 +351,25 @@ export const AppRouter: React.FC<{
         <div className={`fixed inset-0 pointer-events-none opacity-[0.02] bg-striped-green ${isCollapsed ? 'md:ml-20' : 'md:ml-64'} transition-all duration-300`}></div>
         <div className="relative z-10 pt-16 md:pt-0">
           <Routes>
-            <Route path="/dashboard-adm" element={renderView('dashboard')} />
-            <Route path="/leader-dashboard" element={renderView('leader-dashboard')} />
-            <Route path="/clients" element={renderView('clients')} />
-            <Route path="/my-projects" element={renderView('my-projects')} />
-            <Route path="/qa-box" element={renderView('qa-box')} />
-            <Route path="/calendar" element={renderView('calendar')} />
-            <Route path="/finances" element={renderView('finances')} />
-            <Route path="/users" element={renderView('users')} />
-            <Route path="/commercial-intelligence" element={renderView('commercial-intelligence')} />
-            <Route path="/auditor" element={renderView('auditor')} />
-            <Route path="/medical-manual" element={renderView('medical-manual')} />
-            <Route path="/deleted-projects" element={renderView('deleted-projects')} />
-            <Route path="/project/:id" element={<ProjectDetailRoute renderView={renderView} />} />
-            <Route path="*" element={<Navigate to="/my-projects" replace />} />
+            <Route path="/agency-hub" element={renderView('agency-hub')} />
+            {user.role !== UserRole.Cliente && (
+              <>
+                <Route path="/dashboard-adm" element={renderView('dashboard')} />
+                <Route path="/leader-dashboard" element={renderView('leader-dashboard')} />
+                <Route path="/clients" element={renderView('clients')} />
+                <Route path="/my-projects" element={renderView('my-projects')} />
+                <Route path="/qa-box" element={renderView('qa-box')} />
+                <Route path="/calendar" element={renderView('calendar')} />
+                <Route path="/finances" element={renderView('finances')} />
+                <Route path="/users" element={renderView('users')} />
+                <Route path="/commercial-intelligence" element={renderView('commercial-intelligence')} />
+                <Route path="/auditor" element={renderView('auditor')} />
+                <Route path="/medical-manual" element={renderView('medical-manual')} />
+                <Route path="/deleted-projects" element={renderView('deleted-projects')} />
+                <Route path="/project/:id" element={<ProjectDetailRoute renderView={renderView} />} />
+              </>
+            )}
+            <Route path="*" element={<Navigate to={user.role === UserRole.Cliente ? "/agency-hub" : "/my-projects"} replace />} />
           </Routes>
         </div>
         <HelpChatbot />

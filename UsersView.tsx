@@ -12,7 +12,7 @@ const ALL_DEPARTMENTS = [
 ];
 
 const UsersView: React.FC = () => {
-  const { users, manageUser, toggleUserStatus, removeUser } = useODT();
+  const { users, manageUser, toggleUserStatus, removeUser, clients } = useODT();
   const [isEditing, setIsEditing] = useState<Partial<User> | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
 
@@ -25,18 +25,29 @@ const UsersView: React.FC = () => {
       return;
     }
 
-    if (!isEditing.roles || isEditing.roles.length === 0) {
+    const isClient = isEditing.role === UserRole.Cliente;
+
+    if (!isClient && (!isEditing.roles || isEditing.roles.length === 0)) {
       setDialog({ type: 'alert', message: "El usuario debe tener al menos un rol asignado en la lista de roles." });
       return;
     }
 
     try {
+      // Auto-fill roles for client and cleanup department
+      const finalRoles = isClient ? [UserRole.Cliente] : (isEditing.roles || []);
+      const finalDept = isClient ? 'CLIENTE' : (isEditing.department || 'Cuentas');
+
       // Ensure the main role is consistent with the roles array
-      const finalRole = isEditing.roles.includes(isEditing.role as UserRole) 
+      const finalRole = isClient ? UserRole.Cliente : (finalRoles.includes(isEditing.role as UserRole) 
         ? isEditing.role 
-        : isEditing.roles[0];
+        : finalRoles[0]);
         
-      await manageUser({ ...isEditing, role: finalRole as UserRole });
+      await manageUser({ 
+        ...isEditing, 
+        role: finalRole as UserRole,
+        roles: finalRoles,
+        department: finalDept
+      });
       setIsEditing(null);
       setDialog({ type: 'alert', message: "¡Usuario guardado correctamente!" });
     } catch (error) {
@@ -89,7 +100,8 @@ const UsersView: React.FC = () => {
     [UserRole.Correccion]: 'Líder de QA',
     [UserRole.QA_Opera]: 'QA Operativo',
     [UserRole.Medico_Lider]: 'Médico Líder',
-    [UserRole.Medico_Opera]: 'Médico Operativo'
+    [UserRole.Medico_Opera]: 'Médico Operativo',
+    [UserRole.Cliente]: 'Cliente Agency Hub (Portal)'
   };
 
   if (!users) {
@@ -192,18 +204,25 @@ const UsersView: React.FC = () => {
             
             <form onSubmit={handleSave} className="space-y-5">
                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Nombre Completo</label>
-                  <input required value={isEditing.name} onChange={e => setIsEditing({...isEditing, name: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" placeholder="Nombre completo" />
+                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Alias / Nombre Sistema</label>
+                  <input required value={isEditing.name || ''} onChange={e => setIsEditing({...isEditing, name: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" placeholder="Nombre corto" />
+               </div>
+               
+               <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Nombre Completo (Público)</label>
+                  <input value={isEditing.nombreCompleto || ''} onChange={e => setIsEditing({...isEditing, nombreCompleto: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" placeholder="Nombre completo oficial" />
                </div>
                
                <div className="grid grid-cols-2 gap-4">
                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Username (ID)</label>
-                    <input required value={isEditing.username} onChange={e => setIsEditing({...isEditing, username: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-mono text-xs font-bold" placeholder="usuario.id" />
+                    <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">
+                      {isEditing.role === UserRole.Cliente ? 'CORREO ELECTRÓNICO (Usado como ID de acceso)' : 'USERNAME (ID)'}
+                    </label>
+                    <input required value={isEditing.username || ''} onChange={e => setIsEditing({...isEditing, username: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-mono text-xs font-bold" placeholder={isEditing.role === UserRole.Cliente ? "email@ejemplo.com" : "usuario.id"} />
                  </div>
                  <div>
                     <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Password</label>
-                    <input required type="text" value={isEditing.password} onChange={e => setIsEditing({...isEditing, password: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" placeholder="••••••••" />
+                    <input required type="text" value={isEditing.password || ''} onChange={e => setIsEditing({...isEditing, password: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" placeholder="••••••••" />
                  </div>
                </div>
 
@@ -213,10 +232,18 @@ const UsersView: React.FC = () => {
                     value={isEditing.role} 
                     onChange={e => {
                       const newRole = e.target.value as UserRole;
-                      const currentRoles = isEditing.roles || [];
-                      // Ensure the new main role is also in the roles array
-                      const newRoles = currentRoles.includes(newRole) ? currentRoles : [...currentRoles, newRole];
-                      setIsEditing({...isEditing, role: newRole, roles: newRoles});
+                      if (newRole === UserRole.Cliente) {
+                        setIsEditing({
+                          ...isEditing, 
+                          role: newRole, 
+                          roles: [], 
+                          department: 'Comercial'
+                        });
+                      } else {
+                        const currentRoles = isEditing.roles || [];
+                        const newRoles = currentRoles.includes(newRole) ? currentRoles : [...currentRoles, newRole];
+                        setIsEditing({...isEditing, role: newRole, roles: newRoles});
+                      }
                     }} 
                     className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green font-black text-xs appearance-none cursor-pointer"
                   >
@@ -226,46 +253,130 @@ const UsersView: React.FC = () => {
                   </select>
                </div>
 
-               <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Roles Adicionales (Multirole)</label>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border-2 border-slate-100 max-h-40 overflow-y-auto">
-                    {Object.entries(ROLE_LABELS).map(([val, label]) => {
-                      const roleVal = val as UserRole;
-                      const isChecked = isEditing.roles?.includes(roleVal);
-                      return (
-                        <label key={val} className="flex items-center gap-2 cursor-pointer group">
-                          <input 
-                            type="checkbox" 
-                            checked={isChecked}
-                            onChange={() => {
-                              const currentRoles = isEditing.roles || [];
-                              let newRoles: UserRole[];
-                              
-                              if (currentRoles.includes(roleVal)) {
-                                // If unchecking, filter it out
-                                newRoles = currentRoles.filter(r => r !== roleVal);
-                              } else {
-                                // If checking, add it
-                                newRoles = [...currentRoles, roleVal];
-                              }
-                              
-                              setIsEditing({ ...isEditing, roles: newRoles });
-                            }}
-                            className="w-4 h-4 rounded border-slate-300 text-apc-green focus:ring-apc-green"
-                          />
-                          <span className="text-[10px] font-bold text-slate-600 group-hover:text-apc-green transition-colors">{label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-               </div>
+               {isEditing.role !== UserRole.Cliente && (
+                 <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Roles Adicionales (Multirole)</label>
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border-2 border-slate-100 max-h-40 overflow-y-auto">
+                      {Object.entries(ROLE_LABELS).filter(([val]) => val !== UserRole.Cliente).map(([val, label]) => {
+                        const roleVal = val as UserRole;
+                        const isChecked = !!isEditing.roles?.includes(roleVal);
+                        return (
+                          <label key={val} className="flex items-center gap-2 cursor-pointer group">
+                            <input 
+                              type="checkbox" 
+                              checked={isChecked}
+                              onChange={() => {
+                                const currentRoles = isEditing.roles || [];
+                                let newRoles: UserRole[];
+                                
+                                if (currentRoles.includes(roleVal)) {
+                                  newRoles = currentRoles.filter(r => r !== roleVal);
+                                } else {
+                                  newRoles = [...currentRoles, roleVal];
+                                }
+                                
+                                setIsEditing({ ...isEditing, roles: newRoles });
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-apc-green focus:ring-apc-green"
+                            />
+                            <span className="text-[10px] font-bold text-slate-600 group-hover:text-apc-green transition-colors">{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                 </div>
+               )}
 
-               <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Departamento</label>
-                  <select value={isEditing.department} onChange={e => setIsEditing({...isEditing, department: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green font-black text-xs appearance-none cursor-pointer">
-                    {ALL_DEPARTMENTS.map(dept => <option key={dept} value={dept}>{dept.toUpperCase()}</option>)}
-                  </select>
-               </div>
+                {isEditing.role !== UserRole.Cliente && (
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1">Departamento</label>
+                    <select value={isEditing.department} onChange={e => setIsEditing({...isEditing, department: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green font-black text-xs appearance-none cursor-pointer">
+                      {ALL_DEPARTMENTS.map(dept => <option key={dept} value={dept}>{dept.toUpperCase()}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {/* Brand Assignment for Clients */}
+                {isEditing.role === UserRole.Cliente && (
+                  <div className="animate-fadeIn p-4 bg-apc-pink/5 border border-apc-pink/10 rounded-2xl">
+                    <label className="text-[10px] font-black text-apc-pink uppercase mb-2 block ml-1">Marcas / Clientes Asignados</label>
+                    <div className="bg-white/50 p-3 rounded-xl border-2 border-slate-100 max-h-48 overflow-y-auto space-y-1">
+                      {(!clients || clients.length === 0) ? (
+                        <p className="text-[10px] font-bold text-slate-400 italic">No hay clientes registrados.</p>
+                      ) : (
+                        clients.map(client => {
+                          const isAssigned = !!isEditing.marcasAsignadas?.includes(client.id);
+                          return (
+                            <label key={client.id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded-lg transition-colors group">
+                              <input 
+                                type="checkbox"
+                                checked={isAssigned}
+                                onChange={() => {
+                                  const current = isEditing.marcasAsignadas || [];
+                                  const next = isAssigned 
+                                    ? current.filter(id => id !== client.id)
+                                    : [...current, client.id];
+                                  setIsEditing({ ...isEditing, marcasAsignadas: next });
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-apc-pink focus:ring-apc-pink"
+                              />
+                              <span className="text-[10px] font-black text-slate-600 uppercase group-hover:text-apc-pink transition-colors">{client.name}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter mt-2">Acceso exclusivo a estas marcas en el Agency Hub.</p>
+                  </div>
+                )}
+
+                {/* Public Profile for Accounts/Executives */}
+                {(isEditing.role === UserRole.Cuentas_Opera || isEditing.role === UserRole.Cuentas_Lider) && (
+                  <div className="space-y-4 pt-4 border-t-2 border-slate-50 animate-fadeIn bg-slate-900/5 p-4 rounded-2xl">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                       <Icons.Ai className="w-3 h-3" /> Perfil Público (Agency Hub)
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1 text-slate-400">Puesto Público</label>
+                        <input 
+                          value={isEditing.puestoPublico || ''} 
+                          onChange={e => setIsEditing({...isEditing, puestoPublico: e.target.value})} 
+                          className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" 
+                          placeholder="Ej. Account Manager" 
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1 text-slate-400">Teléfono Público</label>
+                        <input 
+                          value={isEditing.telefonoPublico || ''} 
+                          onChange={e => setIsEditing({...isEditing, telefonoPublico: e.target.value})} 
+                          className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" 
+                          placeholder="+52 1..." 
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1 text-slate-400">Email Público (Contacto para el cliente)</label>
+                      <input 
+                        type="email" 
+                        value={isEditing.emailPublico || ''} 
+                        onChange={e => setIsEditing({...isEditing, emailPublico: e.target.value})} 
+                        className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm" 
+                        placeholder="ejemplo@apcpublicidad.com" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block ml-1 text-slate-400">URL Foto de Perfil</label>
+                      <input 
+                        value={isEditing.fotoUrl || ''} 
+                        onChange={e => setIsEditing({...isEditing, fotoUrl: e.target.value})} 
+                        className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl outline-none focus:border-apc-green transition-all font-bold text-sm text-[10px]" 
+                        placeholder="https://images.unsplash.com/..." 
+                      />
+                    </div>
+                  </div>
+                )}
 
                <div className="flex gap-4 pt-6">
                   <button type="button" onClick={() => setIsEditing(null)} className="flex-1 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors">Cerrar</button>

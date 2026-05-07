@@ -25,6 +25,7 @@ export interface User {
   role: UserRole;
   roles?: UserRole[];
   active: boolean;
+  rolPrincipal?: string;
   createdAt?: string;
   // Client Portal Fields
   marcasAsignadas?: string[];
@@ -246,4 +247,5 @@ export interface ODTContextType {
   updateFullProject: (projectId: string, projectData: Partial<Project>) => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   clearNotifications: () => Promise<void>;
+  syncCalendarEvent: (projectId: string, data: Partial<Project>) => Promise<void>;
 }

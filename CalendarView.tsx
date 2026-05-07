@@ -1,14 +1,19 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useODT } from './ODTContext';
-import { Project } from './types';
+import { Project, UserRole } from './types';
 import { Icons } from './constants';
 import { normalizeString } from './workflowConfig';
+import { ref, onValue, get, update } from "firebase/database";
+import { db } from './firebase';
 
 export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) => void }) => {
-  const { projects, users } = useODT();
+  const { user, projects: allProjects, users, syncCalendarEvent } = useODT();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
 
   const month = currentDate.getMonth();
   const year = currentDate.getFullYear();
@@ -24,7 +29,22 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
 
-  const projectsInMonth = projects.filter(p => {
+  useEffect(() => {
+    if (!db) return;
+    const eventsRef = ref(db, 'calendar_events');
+    const unsub = onValue(eventsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const list = Object.values(data).filter((e: any) => !e.deleted);
+        setCalendarEvents(list);
+      } else {
+        setCalendarEvents([]);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const projectsInMonth = calendarEvents.filter(p => {
     if (!p.fecha_entrega) return false;
     const deliveryDate = new Date(p.fecha_entrega + 'T00:00:00');
     return deliveryDate.getMonth() === month && deliveryDate.getFullYear() === year;
@@ -38,15 +58,60 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
     });
   };
 
-  const renderProjectDetail = (p: Project) => {
-    const currentStage = p.etapa_actual || p.etapaActual || '';
-    const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(currentStage));
-    const responsibleUsers = users.filter(u => assignment?.usuarioIds?.includes(u.id) || assignment?.usuarioId === u.id);
-    const responsibleNames = responsibleUsers.map(u => u.name).join(', ');
+  const handleSyncHistory = async () => {
+    try {
+      alert("Iniciando sincronización... Por favor espera.");
+      
+      // 1. Descargamos el historial directamente de Firebase (no del contexto)
+      const snapshot = await get(ref(db, 'projects'));
+      
+      if (!snapshot.exists()) {
+        alert("No se encontraron proyectos en la base de datos.");
+        return;
+      }
+
+      const allProjectsData = snapshot.val();
+      const updates: any = {};
+      let count = 0;
+
+      // 2. Iteramos sobre todos los proyectos
+      Object.keys(allProjectsData).forEach(key => {
+        const p = allProjectsData[key];
+        
+        // Solo copiamos los que NO están eliminados
+        if (!p.deleted) {
+          updates[key] = {
+            id: key,
+            empresa: p.empresa || p.clientId || 'Sin Empresa',
+            fecha_entrega: p.fecha_entrega || null,
+            etapa_actual: p.etapa_actual || p.etapaActual || '',
+            status: p.status || '',
+            deleted: null
+          };
+          count++;
+        }
+      });
+
+      // 3. Guardamos todo de golpe en el nuevo nodo
+      if (Object.keys(updates).length > 0) {
+        await update(ref(db, 'calendar_events'), updates);
+        alert(`¡Éxito! Se copiaron ${count} ODTs activas al calendario.`);
+      } else {
+        alert("No hay proyectos activos para sincronizar.");
+      }
+      
+    } catch (error) {
+      console.error("Error en la sincronización:", error);
+      alert("Hubo un error. Revisa la consola (F12) con clic derecho -> Inspeccionar.");
+    }
+  };
+
+  const renderProjectDetail = (p: any) => {
+    // Para el detalle complemamos con datos que podrían no estar en el evento ligero 
+    // pero intentamos usar lo que tenemos. Si el usuario abre la ODT completa, ahí verá todo.
+    const currentStage = p.etapa_actual || '';
     
-    const createdDate = new Date(p.createdAt);
     const now = new Date();
-    const daysInProcess = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
     
     let daysRemaining = 'N/A';
     let isOnTime = true;
@@ -71,21 +136,13 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
           </div>
           <div className="p-8 space-y-6">
             <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Cliente</label>
+              <div className="col-span-2">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Cliente / Empresa</label>
                 <p className="font-bold text-slate-800 uppercase text-xs">{p.empresa}</p>
               </div>
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Marca / Producto</label>
-                <p className="font-bold text-slate-800 uppercase text-xs">{p.marca} | {p.producto}</p>
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Campaña</label>
-                <p className="font-bold text-slate-800 uppercase text-xs">{p.category || 'N/A'}</p>
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Responsable Actual</label>
-                <p className="font-bold text-slate-800 uppercase text-xs">{responsibleNames || 'Sin asignar'}</p>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Etapa Actual</label>
+                <p className="font-bold text-slate-800 uppercase text-xs">{p.etapa_actual || 'N/A'}</p>
               </div>
               <div>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Estatus</label>
@@ -103,11 +160,8 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Días para entrega</label>
                 <p className="font-black text-xl text-slate-900">{daysRemaining}</p>
               </div>
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Días en proceso</label>
-                <p className="font-black text-xl text-slate-900">{daysInProcess}</p>
-              </div>
             </div>
+            <p className="text-[9px] text-slate-400 italic font-medium">Nota: Para ver asignaciones y historial completo, abre la ODT.</p>
             <button 
               onClick={() => {
                 onOpenProject(p.id);
@@ -123,12 +177,26 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
     );
   };
 
+  const showSyncButton = user && (user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider);
+
   return (
     <div className="space-y-6 animate-fadeIn">
       <header className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Calendario de Entregas</h1>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1 italic">Cronograma de finalización de proyectos</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest italic">Cronograma de finalización de proyectos</p>
+            {showSyncButton && (
+              <button 
+                onClick={handleSyncHistory}
+                disabled={isSyncing}
+                className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full border transition-all ${isSyncing ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-white text-apc-pink border-apc-pink hover:bg-apc-pink hover:text-white'}`}
+              >
+                {isSyncing ? 'Sincronizando...' : 'Sincronizar Historial'}
+              </button>
+            )}
+            {syncMessage && <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest animate-bounce">{syncMessage}</span>}
+          </div>
         </div>
         <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
           <button onClick={prevMonth} className="p-2 hover:bg-slate-50 rounded-xl transition-all text-slate-400 hover:text-apc-pink">

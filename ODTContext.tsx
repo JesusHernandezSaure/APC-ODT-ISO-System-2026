@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { ref, onValue, update, get, set } from "firebase/database";
+import { ref, onValue, update, get, set, query, orderByChild, equalTo, limitToLast } from "firebase/database";
 import { db } from './firebase';
 import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material, Notification as ProjectNotification, ProjectComment } from './types';
 import { GLOBAL_STAGES, calculateRoadmap, getPriorityInfo, normalizeString } from './workflowConfig';
@@ -68,36 +68,122 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   useEffect(() => {
-    if (!db) {
-      const timer = setTimeout(() => setLoading(false), 0);
+    // 1. Si no hay usuario logueado, liberamos AMBOS estados de carga
+    // para que App.tsx pueda mostrar el formulario de Login.
+    if (!user?.id) {
+      const timer = setTimeout(() => {
+        setLoading(false);
+        setIsInitialLoad(false);
+      }, 0);
       return () => clearTimeout(timer);
     }
-    const projectsRef = ref(db, 'projects');
-    const usersRef = ref(db, 'users');
-    const clientsRef = ref(db, 'clients');
-    const notificationsRef = ref(db, 'notifications');
 
-    const unsubProjects = onValue(projectsRef, (s) => {
-      const d = s.val();
-      const all: Project[] = d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : [];
-      setProjects(all.filter(p => !p.deleted));
-      setDeletedProjects(all.filter(p => p.deleted));
-    });
+    // Arreglo para guardar las funciones que apagan los listeners
+    const activeListeners: (() => void)[] = [];
+    
+    // Evaluamos el rol del usuario
+    const isClientPortal = user.rolPrincipal === 'Cliente Agency Hub (Portal)';
 
-    const unsubUsers = onValue(usersRef, (s) => {
+    if (isClientPortal) {
+      // ─── BLOQUE A: LÓGICA PARA CLIENTES (AISLAMIENTO TOTAL) ───
+      const marcas = user.marcasAsignadas || [];
+
+      // Si es cliente pero no tiene marcas, vaciamos la lista y terminamos
+      if (marcas.length === 0) {
+        setProjects([]);
+      } else {
+        // Objeto temporal para ir guardando las ODTs de cada marca sin sobreescribirse
+        const resultadosPorMarca: Record<string, Project[]> = {};
+
+        marcas.forEach((marcaId) => {
+          const q = query(ref(db, 'projects'), orderByChild('clientId'), equalTo(marcaId));
+          
+          const unsub = onValue(q, (snapshot) => {
+            const items: Project[] = [];
+            
+            // CRÍTICO: Usamos forEach para NO PERDER el ID de Firebase
+            snapshot.forEach((childSnapshot) => {
+              items.push({ 
+                id: childSnapshot.key as string, // Aquí rescatamos el ID único
+                ...childSnapshot.val() 
+              });
+            });
+
+            // Guardamos los resultados de esta marca específica
+            resultadosPorMarca[marcaId] = items;
+            
+            // Aplanamos todas las marcas en un solo arreglo y actualizamos React
+            setProjects(Object.values(resultadosPorMarca).flat());
+            
+          }, (error) => {
+            console.error(`Error al cargar ODTs de la marca ${marcaId}:`, error);
+          });
+
+          activeListeners.push(unsub);
+        });
+      }
+    } else {
+      // ─── BLOQUE B: LÓGICA PARA STAFF (DIETA DE BASURA) ───
+      // Para asegurar que el staff vea sus datos hoy, descargamos la colección,
+      // pero filtramos los "eliminados" de forma segura sin depender de equalTo(false).
+
+      const unsub = onValue(ref(db, 'projects'), (snapshot) => {
+        const items: Project[] = [];
+        const deletedItems: Project[] = [];
+
+        snapshot.forEach((childSnapshot) => {
+          const data = childSnapshot.val();
+          const proj = {
+            id: childSnapshot.key as string,
+            ...data
+          };
+
+          // Solo agregamos la ODT si NO está marcada como eliminada
+          if (!data.deleted) {
+            items.push(proj);
+          } else {
+            deletedItems.push(proj);
+          }
+        });
+
+        setProjects(items);
+        setDeletedProjects(deletedItems);
+
+      }, (error) => {
+        // Si la carga de proyectos falla, liberamos el loading para no bloquear la UI
+        console.error("Error al cargar ODTs del Staff:", error);
+        setLoading(false);
+        setIsInitialLoad(false);
+      });
+
+      activeListeners.push(unsub);
+    }
+
+    // ─── CARGA ÚNICA: Usuarios y Clientes (sin listener continuo) ───
+    // Se descargan una sola vez al iniciar sesión. No necesitan tiempo real
+    // porque estos catálogos cambian raramente y no afectan el flujo de trabajo diario.
+    get(ref(db, 'users')).then((s) => {
       const d = s.val();
       setUsers(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
-    });
+    }).catch(e => console.error("Error cargando usuarios:", e));
 
-    const unsubClients = onValue(clientsRef, (s) => {
+    get(ref(db, 'clients')).then((s) => {
       const d = s.val();
       setClients(d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : []);
-    });
+    }).catch(e => console.error("Error cargando clientes:", e));
 
-    const unsubNotifs = onValue(notificationsRef, (s) => {
+    // ─── NOTIFICACIONES: Estrategia diferenciada por rol ───
+    // Clientes: solo sus propias notificaciones (filtrado en servidor por userId).
+    // Staff: las últimas 50 notificaciones recientes (necesarias para el chequeo SLA
+    //        que verifica si ya se notificó a otros usuarios antes de crear duplicados).
+    const notificationsQuery = isClientPortal
+      ? query(ref(db, 'notifications'), orderByChild('userId'), equalTo(user.id))
+      : query(ref(db, 'notifications'), limitToLast(50));
+
+    const unsubNotifs = onValue(notificationsQuery, (s) => {
       const d = s.val();
       const list: ProjectNotification[] = d ? Object.keys(d).map(k => ({ ...d[k], id: k })) : [];
-      
+
       if (!hasInitializedNotifications.current) {
         list.forEach(n => processedNotifications.current.add(n.id));
         hasInitializedNotifications.current = true;
@@ -115,17 +201,27 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setNotifications(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setLoading(false);
       setIsInitialLoad(false);
+
+    }, (error) => {
+      // Si la carga de notificaciones falla, liberamos el loading para no bloquear la UI.
+      // La app puede funcionar sin notificaciones pero NO puede quedarse en la pantalla de carga.
+      console.error("Error al cargar notificaciones:", error);
+      setLoading(false);
+      setIsInitialLoad(false);
     });
+    activeListeners.push(unsubNotifs);
 
+    // ─── BLOQUE C: CLEANUP RIGUROSO ───
     return () => {
-      unsubProjects();
-      unsubUsers();
-      unsubClients();
-      unsubNotifs();
+      // Apagamos TODOS los listeners al cambiar de usuario o desmontar
+      activeListeners.forEach(unsub => unsub());
     };
-  }, [user?.id]); // Only re-run if user ID changes
+    
+  }, [user]); // Dependencia clave: el objeto usuario completo para detectar cambios de marcas o roles
 
-  // Real-time listener for CURRENT logged-in user to ensure roles are always fresh
+  // Real-time listener for CURRENT logged-in user to ensure roles are always fresh.
+  // IMPORTANTE: la dependencia es solo user?.id (no el objeto user completo) para evitar
+  // que cada actualización del usuario provoque una re-suscripción en cascada.
   useEffect(() => {
     if (!db || !user?.id || user.id === 'admin') return;
     
@@ -133,17 +229,20 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsub = onValue(currentUserRef, (s) => {
       if (s.exists()) {
         const freshData = { ...s.val(), id: user.id };
-        // Only update if data actually changed to avoid infinite loops
-        if (JSON.stringify(freshData) !== JSON.stringify(user)) {
-          console.log("Sesión actualizada con datos frescos de Firestore");
-          setUser(freshData);
-          localStorage.setItem('apc_session', JSON.stringify(freshData));
-        }
+        // Usamos la forma funcional de setUser para comparar con el estado actual
+        // sin necesitar 'user' como dependencia del efecto (evita el loop).
+        setUser(prev => {
+          if (JSON.stringify(freshData) !== JSON.stringify(prev)) {
+            localStorage.setItem('apc_session', JSON.stringify(freshData));
+            return freshData;
+          }
+          return prev;
+        });
       }
     });
     
     return () => unsub();
-  }, [user?.id, user]);
+  }, [user?.id]); // Solo el ID: el listener solo se recrea cuando cambia de usuario (login/logout)
 
   const getRoadmapStages = (project: Project) => {
     return calculateRoadmap(project.areas_seleccionadas || []);
@@ -356,6 +455,19 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearTimeout(timer);
   }, [user, projects, users, notifications]);
 
+  const syncCalendarEvent = async (projectId: string, data: Partial<Project>) => {
+    if (!db) return;
+    const eventData = {
+      id: projectId,
+      empresa: data.empresa || "",
+      fecha_entrega: data.fecha_entrega || "",
+      etapa_actual: data.etapa_actual || data.etapaActual || "",
+      status: data.status || "",
+      deleted: !!data.deleted
+    };
+    await set(ref(db, `calendar_events/${projectId}`), eventData);
+  };
+
   const addProject = async (projectData: Partial<Project>) => {
     if (!db || !user) return;
     const projectId = projectData.id;
@@ -405,6 +517,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       facturado: false
     };
     await set(ref(db, `projects/${projectId}`), newProject);
+    await syncCalendarEvent(projectId, newProject);
 
     // Notificación para el líder de cuentas (si no es el mismo que crea)
     const accountsLeader = users.find(u => u.role === UserRole.Cuentas_Lider);
@@ -426,6 +539,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString()
     };
     await update(ref(db, `projects/${projectId}`), updates);
+    await syncCalendarEvent(projectId, { ...projects.find(p => p.id === projectId), ...updates });
   };
 
   const removeProject = async (projectId: string, reason?: string) => {
@@ -444,6 +558,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       await update(ref(db, `projects/${projectId}`), updates);
+      await syncCalendarEvent(projectId, { ...project, ...updates });
     } catch (error) {
       console.error("Error al eliminar ODT:", error);
       throw error;
@@ -462,6 +577,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedAt: new Date().toISOString()
       };
       await update(ref(db, `projects/${projectId}`), updates);
+      const project = projects.find(p => p.id === projectId);
+      await syncCalendarEvent(projectId, { ...project, ...updates });
     } catch (error) {
       console.error("Error al restaurar ODT:", error);
       throw error;
@@ -1381,6 +1498,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString(),
       comentarios: [newComment, ...(project.comentarios || [])]
     });
+    await syncCalendarEvent(projectId, { ...project, fecha_entrega: newDate });
   };
 
   const updateProjectId = async (oldId: string, newId: string) => {
@@ -1547,13 +1665,13 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSystemEvent: true
       }, ...(project.comentarios || [])]
     };
-
     await update(ref(db, `projects/${projectId}`), updates);
   };
 
   return (
     <ODTContext.Provider value={{ 
       user, projects, deletedProjects, clients, users, notifications, loading, isInitialLoad, isLoggingIn, login, logout, 
+      syncCalendarEvent,
       isAlertsOpen, setIsAlertsOpen,
       updateProjectStatus: async (projectId: string, newStatus: Project['status'], comment: string) => {
         if (!db || !user) return;
@@ -1646,3 +1764,15 @@ export const useODT = () => {
   if (!context) throw new Error('useODT error');
   return context;
 };
+
+// --- BLOQUE 5: INDEXACIÓN (NO OLVIDAR) ---
+// ACCIÓN REQUERIDA EN FIREBASE CONSOLE:
+// En Database Rules, agregar bajo "projects":
+// { ".indexOn": ["clientId", "deleted"] }
+// Sin esto, RTDB ejecuta las queries con full-scan y lanza warnings en consola.
+
+// --- BLOQUE 6: SEGURIDAD (FUERA DE SCOPE DEL CONTEXT, PERO CRÍTICO) ---
+// SEGURIDAD PENDIENTE: Este filtrado es solo de performance/UX.
+// Un usuario con acceso a las credenciales de Firebase puede bypassearlo.
+// Es OBLIGATORIO implementar Firebase Database Security Rules que validen 
+// el rolPrincipal del auth.token antes de permitir lecturas a /projects.

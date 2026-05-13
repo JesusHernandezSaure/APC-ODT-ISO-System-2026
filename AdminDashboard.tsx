@@ -10,6 +10,8 @@ import { generateMasterReport, downloadMasterCSV, fixOklchForHtml2Canvas } from 
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { ref, set } from 'firebase/database';
+import { db } from './firebase';
 
 const AdminDashboard: React.FC = () => {
   const { Icons } = Constants;
@@ -246,6 +248,21 @@ const AdminDashboard: React.FC = () => {
     setIsExportModalOpen(false);
   };
 
+  const nukeNotifications = async () => {
+    const confirmacion = window.confirm("🚨 ¿Estás seguro de que quieres aniquilar TODAS las notificaciones para salvar el almacenamiento?");
+    
+    if (confirmacion) {
+      try {
+        // Al enviar 'null' a un nodo, Firebase lo elimina por completo
+        await set(ref(db, 'notifications'), null);
+        alert("💥 ¡BOOM! El nodo de notificaciones ha sido eliminado por completo.");
+      } catch (error) {
+        console.error("Error al borrar:", error);
+        alert("Hubo un error al borrar. Revisa la consola.");
+      }
+    }
+  };
+
   if (!projects || !users) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -267,6 +284,12 @@ const AdminDashboard: React.FC = () => {
             className="bg-apc-pink text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-apc-pink/80 transition-all shadow-lg shadow-apc-pink/20 flex items-center gap-2"
           >
             <Icons.Plus className="w-4 h-4" /> EXPORTAR REPORTE MAESTRO
+          </button>
+          <button 
+            onClick={nukeNotifications}
+            className="px-4 py-2 bg-red-600 text-white font-black rounded-lg hover:bg-red-700 text-[10px] uppercase tracking-widest"
+          >
+            🔥 BORRAR NOTIFICACIONES
           </button>
           <select className="bg-white border-2 border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest outline-none focus:border-apc-green transition-all" value={executiveFilter} onChange={(e) => setExecutiveFilter(e.target.value)}>
             <option value="all">TODOS LOS EJECUTIVOS</option>

@@ -254,7 +254,7 @@ const AdminDashboard: React.FC = () => {
     if (confirmacion) {
       try {
         // Al enviar 'null' a un nodo, Firebase lo elimina por completo
-        await set(ref(db, 'notifications'), null);
+        await set(ref(db, 'notifications_v3'), null);
         alert("💥 ¡BOOM! El nodo de notificaciones ha sido eliminado por completo.");
       } catch (error) {
         console.error("Error al borrar:", error);

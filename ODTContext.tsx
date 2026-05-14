@@ -177,8 +177,8 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Staff: las últimas 50 notificaciones recientes (necesarias para el chequeo SLA
     //        que verifica si ya se notificó a otros usuarios antes de crear duplicados).
     const notificationsQuery = isClientPortal
-      ? query(ref(db, 'notifications'), orderByChild('userId'), equalTo(user.id))
-      : query(ref(db, 'notifications'), limitToLast(50));
+      ? query(ref(db, 'notifications_v3'), orderByChild('userId'), equalTo(user.id))
+      : query(ref(db, 'notifications_v3'), limitToLast(50));
 
     const unsubNotifs = onValue(notificationsQuery, (s) => {
       const d = s.val();
@@ -311,12 +311,12 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       read: false,
       createdAt: new Date().toISOString()
     };
-    await set(ref(db, `notifications/${id}`), newNotif);
+    await set(ref(db, `notifications_v3/${id}`), newNotif);
   };
 
   const markNotificationAsRead = async (id: string) => {
     if (!db) return;
-    await update(ref(db, `notifications/${id}`), { read: true });
+    await update(ref(db, `notifications_v3/${id}`), { read: true });
   };
 
   const clearNotifications = async () => {
@@ -324,7 +324,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const userNotifs = notifications.filter(n => n.userId === user.id);
     const updates: Record<string, unknown> = {};
     userNotifs.forEach(n => {
-      updates[`notifications/${n.id}`] = null;
+      updates[`notifications_v3/${n.id}`] = null;
     });
     await update(ref(db), updates);
   };
@@ -1399,7 +1399,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Update notifications that reference this project
     notifications.forEach(n => {
       if (n.projectId === oldId) {
-        updates[`notifications/${n.id}/projectId`] = newDbKey;
+        updates[`notifications_v3/${n.id}/projectId`] = newDbKey;
       }
     });
 

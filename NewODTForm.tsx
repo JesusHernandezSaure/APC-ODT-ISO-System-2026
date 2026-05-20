@@ -10,12 +10,14 @@ import { structureBrief } from './services/geminiService';
 interface NewODTFormProps {
   client: Client;
   onClose: () => void;
+  isClient?: boolean;
 }
 
-const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
+const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose, isClient = false }) => {
   const { projects, addProject } = useODT();
   const [loading, setLoading] = useState(false);
   const [isFormatting, setIsFormatting] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
   const existingBrands = Array.from(new Set(
     (projects || [])
@@ -108,9 +110,11 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedAreas.length === 0) {
-      alert("Error: Debe seleccionar al menos un área operativa para la ruta ISO.");
-      return;
+    if (!isClient) {
+      if (selectedAreas.length === 0) {
+        alert("Error: Debe seleccionar al menos un área operativa para la ruta ISO.");
+        return;
+      }
     }
 
     if (!fechaEntrega) {
@@ -118,14 +122,16 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
       return;
     }
 
-    const hasInvalidDates = selectedAreas.some(area => {
-      const internalDate = fechasInternas[area];
-      return !internalDate || (fechaEntrega && internalDate > fechaEntrega);
-    });
+    if (!isClient) {
+      const hasInvalidDates = selectedAreas.some(area => {
+        const internalDate = fechasInternas[area];
+        return !internalDate || (fechaEntrega && internalDate > fechaEntrega);
+      });
 
-    if (hasInvalidDates) {
-      alert("Error: Todas las áreas seleccionadas deben tener un Deadline Interno válido (no posterior a la entrega global).");
-      return;
+      if (hasInvalidDates) {
+        alert("Error: Todas las áreas seleccionadas deben tener un Deadline Interno válido (no posterior a la entrega global).");
+        return;
+      }
     }
 
     setLoading(true);
@@ -137,18 +143,18 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         marca,
         producto,
         fecha_entrega: fechaEntrega,
-        fechasInternas,
+        fechasInternas: isClient ? {} : fechasInternas,
         category,
         subCategory,
         detalleEntregableCampaña: category === 'Campaña' ? detalleEntregableCampaña : '',
-        tipoCargo,
-        monto_proyectado: tipoCargo === 'extra' ? monto : 0,
-        monto_valor_teorico: tipoCargo === 'iguala' ? montoValorTeorico : 0,
-        complejidad,
-        paginas_estimadas: paginasEstimadas,
-        minutos_video_estimados: minutosVideoEstimados,
-        justificacion_no_facturado: tipoCargo !== 'extra' ? justification : '',
-        areas_seleccionadas: selectedAreas,
+        tipoCargo: isClient ? 'iguala' : tipoCargo,
+        monto_proyectado: !isClient && tipoCargo === 'extra' ? monto : 0,
+        monto_valor_teorico: !isClient && tipoCargo === 'iguala' ? montoValorTeorico : 0,
+        complejidad: isClient ? 'Media' : complejidad,
+        paginas_estimadas: isClient ? 0 : paginasEstimadas,
+        minutos_video_estimados: isClient ? 0 : minutosVideoEstimados,
+        justificacion_no_facturado: !isClient && tipoCargo !== 'extra' ? justification : '',
+        areas_seleccionadas: isClient ? [] : selectedAreas,
         assignedExecutives: client.assignedExecutives || [],
         referenceLinks: links.filter(l => l.trim() !== ''),
         brief,
@@ -156,8 +162,12 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         current_stage_index: 0
       };
       await addProject(newProject);
-      alert(`ODT ${newProject.id} creada exitosamente.`);
-      onClose();
+      if (isClient) {
+        setShowSuccessMessage(true);
+      } else {
+        alert(`ODT ${newProject.id} creada exitosamente.`);
+        onClose();
+      }
     } catch {
       alert("Error al crear la ODT.");
     } finally {
@@ -165,13 +175,43 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
     }
   };
 
+  if (showSuccessMessage) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+        <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-8 text-center animate-fadeIn relative z-[1010] border border-slate-100 flex flex-col items-center">
+          <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-inner">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-emerald-500">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">¡Gracias! <span className="text-apc-pink">♥</span></h2>
+          <p className="text-slate-600 font-bold text-lg mb-2">
+            El equipo está trabajando tu solicitud.
+          </p>
+          <p className="text-slate-400 font-black text-xs uppercase tracking-widest mb-8">
+            ¡Nos vemos pronto!
+          </p>
+          <button 
+            type="button"
+            onClick={onClose}
+            className="w-full bg-slate-900 hover:bg-apc-pink text-white font-black text-[11px] uppercase tracking-widest py-4 rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 active:scale-95"
+          >
+            Entendido
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn relative z-[1010]">
         <header className="bg-apc-green p-6 flex justify-between items-center text-white">
           <div>
-            <h2 className="text-xl font-black tracking-tight">Apertura de ODT Master</h2>
-            <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mt-1">ISO 9001:2015 - Carpeta: {client.name}</p>
+            <h2 className="text-xl font-black tracking-tight">{isClient ? 'Nueva Solicitud de ODT' : 'Apertura de ODT Master'}</h2>
+            <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mt-1">
+              {isClient ? `Solicitud para: ${client.name}` : `ISO 9001:2015 - Carpeta: ${client.name}`}
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-all">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -179,16 +219,18 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
         </header>
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-8">
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Número de ODT</label>
-              <input required value={odtId} onChange={e => setOdtId(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-mono font-black text-apc-pink" placeholder="Ej: APC-2024-001" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</label>
-              <input required value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" placeholder="Nombre del cliente..." />
-            </div>
-          </section>
+          {!isClient && (
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Número de ODT</label>
+                <input required value={odtId} onChange={e => setOdtId(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-mono font-black text-apc-pink" placeholder="Ej: APC-2024-001" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</label>
+                <input required value={clientName} onChange={e => setClientName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" placeholder="Nombre del cliente..." />
+              </div>
+            </section>
+          )}
 
           <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
@@ -257,111 +299,117 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
             )}
           </section>
 
-          <section className="space-y-3">
-             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ruta ISO (Áreas Operativas Oficiales)</label>
-             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {OPERATIVE_AREAS.map(area => {
-                const isSelected = selectedAreas.includes(area);
-                const isInvalid = fechaEntrega && fechasInternas[area] && fechasInternas[area] > fechaEntrega;
-                
-                return (
-                  <div key={area} className="space-y-2">
-                    <button 
-                      type="button" 
-                      onClick={() => toggleArea(area)} 
-                      className={`w-full px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${isSelected ? 'bg-apc-green border-apc-green text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-apc-pink/30'}`}
-                    >
-                      {area}
-                    </button>
-                    {isSelected && (
-                      <div className="animate-fadeIn space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Deadline {area}</label>
-                        <input 
-                          required 
-                          type="date" 
-                          disabled={!fechaEntrega}
-                          value={fechasInternas[area] || ''} 
-                          onChange={e => handleFechaInternaChange(area, e.target.value)}
-                          className={`w-full px-3 py-2 bg-white border-2 rounded-xl text-[11px] font-bold outline-none transition-all ${!fechaEntrega ? 'opacity-50 cursor-not-allowed' : isInvalid ? 'border-red-500 ring-4 ring-red-50' : 'border-slate-100 focus:border-apc-pink'}`}
-                        />
-                        {isInvalid && (
-                          <p className="text-[8px] text-red-500 font-bold uppercase tracking-tighter mt-1">⚠️ posterior a entrega global</p>
-                        )}
-                        {!fechaEntrega && (
-                          <p className="text-[7px] text-amber-500 font-bold uppercase tracking-tighter italic">Define fecha global primero</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-             </div>
-             <p className="text-[9px] text-slate-400 font-bold uppercase italic mt-1">* Se insertará automáticamente un gate de REVISIÓN QA tras completar cada área técnica.</p>
-          </section>
-
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-100 contents-section">
-            <div className="md:col-span-3">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Esfuerzo Operativo Estimado</label>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nivel de Complejidad</label>
-              <select value={complejidad} onChange={e => setComplejidad(e.target.value as 'Baja' | 'Media' | 'Alta')} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold text-sm">
-                 <option value="Baja">Baja</option>
-                 <option value="Media">Media</option>
-                 <option value="Alta">Alta</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Páginas / Hojas Estimadas</label>
-              <input type="number" min="0" value={paginasEstimadas} onChange={e => setPaginasEstimadas(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Minutos de Video Estimados</label>
-              <input type="number" min="0" value={minutosVideoEstimados} onChange={e => setMinutosVideoEstimados(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" />
-            </div>
-          </section>
-
-          <section className="p-6 border-2 border-apc-green/10 bg-apc-green/5 rounded-2xl space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-               <div>
-                 <h4 className="font-black text-slate-800 text-sm tracking-tight">Parámetros Financieros</h4>
-                 <p className="text-[10px] text-slate-500 font-medium">Define el tipo de cargo para reporte de rentabilidad.</p>
+          {!isClient && (
+            <section className="space-y-3">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ruta ISO (Áreas Operativas Oficiales)</label>
+               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {OPERATIVE_AREAS.map(area => {
+                  const isSelected = selectedAreas.includes(area);
+                  const isInvalid = fechaEntrega && fechasInternas[area] && fechasInternas[area] > fechaEntrega;
+                  
+                  return (
+                    <div key={area} className="space-y-2">
+                      <button 
+                        type="button" 
+                        onClick={() => toggleArea(area)} 
+                        className={`w-full px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-tighter border-2 transition-all ${isSelected ? 'bg-apc-green border-apc-green text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-apc-pink/30'}`}
+                      >
+                        {area}
+                      </button>
+                      {isSelected && (
+                        <div className="animate-fadeIn space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block block">Deadline {area}</label>
+                          <input 
+                            required 
+                            type="date" 
+                            disabled={!fechaEntrega}
+                            value={fechasInternas[area] || ''} 
+                            onChange={e => handleFechaInternaChange(area, e.target.value)}
+                            className={`w-full px-3 py-2 bg-white border-2 rounded-xl text-[11px] font-bold outline-none transition-all ${!fechaEntrega ? 'opacity-50 cursor-not-allowed' : isInvalid ? 'border-red-500 ring-4 ring-red-50' : 'border-slate-100 focus:border-apc-pink'}`}
+                          />
+                          {isInvalid && (
+                            <p className="text-[8px] text-red-500 font-bold uppercase tracking-tighter mt-1">⚠️ posterior a entrega global</p>
+                          )}
+                          {!fechaEntrega && (
+                            <p className="text-[7px] text-amber-500 font-bold uppercase tracking-tighter italic">Define fecha global primero</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                </div>
-               <div className="flex-1 max-w-xs">
-                 <select 
-                   value={tipoCargo} 
-                   onChange={e => setTipoCargo(e.target.value as 'extra' | 'iguala' | 'interno')}
-                   className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-black text-xs uppercase"
-                 >
-                   <option value="extra">Sí Factura (Extra a Iguala)</option>
-                   <option value="iguala">Incluida en Iguala / No Factura</option>
-                   <option value="interno">Proyecto Interno (No Facturable)</option>
-                 </select>
-               </div>
-            </div>
+               <p className="text-[9px] text-slate-400 font-bold uppercase italic mt-1">* Se insertará automáticamente un gate de REVISIÓN QA tras completar cada área técnica.</p>
+            </section>
+          )}
 
-            {tipoCargo === 'extra' && (
-              <div className="space-y-2 animate-fadeIn">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monto a Facturar ($)</label>
-                <input required type="number" min="0" value={monto} onChange={e => setMonto(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-black text-xl" placeholder="0.00" />
+          {!isClient && (
+            <section className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-100 contents-section">
+              <div className="md:col-span-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Esfuerzo Operativo Estimado</label>
               </div>
-            )}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nivel de Complejidad</label>
+                <select value={complejidad} onChange={e => setComplejidad(e.target.value as 'Baja' | 'Media' | 'Alta')} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold text-sm">
+                   <option value="Baja">Baja</option>
+                   <option value="Media">Media</option>
+                   <option value="Alta">Alta</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Páginas / Hojas Estimadas</label>
+                <input type="number" min="0" value={paginasEstimadas} onChange={e => setPaginasEstimadas(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Minutos de Video Estimados</label>
+                <input type="number" min="0" value={minutosVideoEstimados} onChange={e => setMinutosVideoEstimados(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold" />
+              </div>
+            </section>
+          )}
 
-            {tipoCargo === 'iguala' && (
-              <div className="space-y-2 animate-fadeIn">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Teórico (Mercado) ($)</label>
-                <input required type="number" min="0" value={montoValorTeorico} onChange={e => setMontoValorTeorico(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-black text-xl" placeholder="0.00" />
-                <small className="text-slate-500 text-[10px] font-medium block">Indica cuánto costaría este trabajo si se cobrara por separado. Útil para medir rentabilidad.</small>
+          {!isClient && (
+            <section className="p-6 border-2 border-apc-green/10 bg-apc-green/5 rounded-2xl space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                 <div>
+                   <h4 className="font-black text-slate-800 text-sm tracking-tight">Parámetros Financieros</h4>
+                   <p className="text-[10px] text-slate-500 font-medium">Define el tipo de cargo para reporte de rentabilidad.</p>
+                 </div>
+                 <div className="flex-1 max-w-xs">
+                   <select 
+                     value={tipoCargo} 
+                     onChange={e => setTipoCargo(e.target.value as 'extra' | 'iguala' | 'interno')}
+                     className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-black text-xs uppercase"
+                   >
+                     <option value="extra">Sí Factura (Extra a Iguala)</option>
+                     <option value="iguala">Incluida en Iguala / No Factura</option>
+                     <option value="interno">Proyecto Interno (No Facturable)</option>
+                   </select>
+                 </div>
               </div>
-            )}
 
-            {tipoCargo !== 'extra' && (
-              <div className="space-y-2 animate-fadeIn">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Justificación / Notas</label>
-                <textarea required value={justification} onChange={e => setJustification(e.target.value)} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold text-sm h-24" placeholder="Notas adicionales sobre el cargo..." />
-              </div>
-            )}
-          </section>
+              {tipoCargo === 'extra' && (
+                <div className="space-y-2 animate-fadeIn">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monto a Facturar ($)</label>
+                  <input required type="number" min="0" value={monto} onChange={e => setMonto(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-black text-xl" placeholder="0.00" />
+                </div>
+              )}
+
+              {tipoCargo === 'iguala' && (
+                <div className="space-y-2 animate-fadeIn">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Teórico (Mercado) ($)</label>
+                  <input required type="number" min="0" value={montoValorTeorico} onChange={e => setMontoValorTeorico(Number(e.target.value))} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-green outline-none font-black text-xl" placeholder="0.00" />
+                  <small className="text-slate-500 text-[10px] font-medium block">Indica cuánto costaría este trabajo si se cobrara por separado. Útil para medir rentabilidad.</small>
+                </div>
+              )}
+
+              {tipoCargo !== 'extra' && (
+                <div className="space-y-2 animate-fadeIn">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Justificación / Notas</label>
+                  <textarea required value={justification} onChange={e => setJustification(e.target.value)} className="w-full px-4 py-3 bg-white border rounded-xl focus:ring-2 focus:ring-apc-pink outline-none font-bold text-sm h-24" placeholder="Notas adicionales sobre el cargo..." />
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="space-y-4">
              <div className="flex justify-between items-center">
@@ -449,7 +497,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose }) => {
           <footer className="pt-8 border-t flex justify-end gap-3">
              <button type="button" onClick={onClose} className="px-6 py-3 text-xs font-black text-slate-500 hover:text-slate-900 transition-all uppercase">Cancelar</button>
              <button disabled={loading} type="submit" className="px-10 py-3 bg-apc-green text-white text-xs font-black rounded-xl hover:bg-apc-green/80 transition-all shadow-xl disabled:opacity-50">
-               {loading ? 'REGISTRANDO...' : 'CREAR ODT MASTER'}
+               {loading ? 'ENVIANDO...' : isClient ? 'ENVIAR SOLICITUD' : 'CREAR ODT MASTER'}
              </button>
           </footer>
         </form>

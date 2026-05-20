@@ -1,12 +1,11 @@
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useODT } from './ODTContext';
 import { UserRole } from './types';
 import {Icons} from './constants';
-import { db } from './firebase';
-import { ref, set } from 'firebase/database';
 import AgencyHubDashboardTour from './AgencyHubDashboardTour';
+import NewODTForm from './NewODTForm';
 
 const AgencyHubView: React.FC = () => {
   const { user, projects, clients, users } = useODT();
@@ -14,16 +13,6 @@ const AgencyHubView: React.FC = () => {
   const [selectedBrandId, setSelectedBrandId] = useState<string | 'all'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [iniciarTutorial, setIniciarTutorial] = useState(false);
-  const [formSolicitud, setFormSolicitud] = useState({
-    marca: '',
-    tipoMaterial: '',
-    campana: '',
-    descripcion: '',
-    objetivo: '',          // NUEVO
-    posicionamiento: '',   // NUEVO
-    insights: '',          // NUEVO
-    referencias: ''        // NUEVO
-  });
 
   // Filter projects by assigned brands
   const assignedClients = useMemo(() => {
@@ -62,60 +51,6 @@ const AgencyHubView: React.FC = () => {
         return dateA - dateB;
     });
   }, [projects, user, selectedBrandId]);
-
-  // 2. Función para guardar la ODT pre-armada en Firebase:
-  const handleEnviarSolicitud = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const now = Date.now();
-      const newId = `SOL-${now}`;
-      const selectedClient = assignedClients.find(c => c.name === formSolicitud.marca) || targetClient;
-
-      const newRequest = {
-        id: newId,
-        clientId: selectedClient?.id || 'GLOBAL',
-        empresa: selectedClient?.name || formSolicitud.marca,
-        marca: formSolicitud.marca,
-        tipoMaterial: formSolicitud.tipoMaterial,
-        producto: formSolicitud.campana,
-        comentariosCliente: formSolicitud.descripcion,
-        objetivo: formSolicitud.objetivo,               // NUEVO
-        posicionamiento: formSolicitud.posicionamiento, // NUEVO
-        insights: formSolicitud.insights,               // NUEVO
-        referencias: formSolicitud.referencias,         // NUEVO
-        etapa_actual: 'Nueva Solicitud Cliente',
-        etapaActual: 'Nueva Solicitud Cliente',
-        status: 'Borrador',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        origen: 'Agency Hub',
-        ownerId: user.id,
-        assignedExecutives: selectedClient?.assignedExecutives || (ejecutivo ? [ejecutivo.id] : []),
-        comentarios: [
-          {
-            id: `sys-${now}`,
-            authorId: user.id,
-            authorName: user.name,
-            text: `ODT SOLICITADA DESDE EL HUB: ${formSolicitud.descripcion}`,
-            createdAt: new Date().toISOString(),
-            isSystemEvent: true
-          }
-        ]
-      };
-
-      await set(ref(db, `projects/${newId}`), newRequest);
-      
-      alert("Solicitud enviada exitosamente. Tu ejecutivo la revisará pronto.");
-      setIsModalOpen(false);
-      setFormSolicitud({ 
-        marca: '', tipoMaterial: '', campana: '', descripcion: '',
-        objetivo: '', posicionamiento: '', insights: '', referencias: '' 
-      });
-    } catch (error) {
-      console.error("Error al crear solicitud:", error);
-      alert("Error al enviar la solicitud. Por favor intenta de nuevo.");
-    }
-  }, [user, assignedClients, formSolicitud, targetClient, ejecutivo]);
 
   // Helper for status translation
   const translateStatusForClient = (etapaActual: string, enStandby?: boolean) => {
@@ -343,152 +278,98 @@ const AgencyHubView: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal Nueva ODT (Pre-armado) */}
-      {isModalOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-start z-[1000] p-4 pt-[95px]"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsModalOpen(false);
-          }}
-        >
-          <div className="bg-white p-8 rounded-3xl w-full max-w-lg shadow-2xl animate-fadeIn max-h-[calc(100vh-120px)] overflow-y-auto relative">
-            <button 
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-all"
-              title="Cerrar"
-            >
-              <Icons.Plus className="w-5 h-5 rotate-45" />
-            </button>
-            <h2 className="text-2xl font-black text-slate-800 mb-2">Nueva Solicitud de ODT</h2>
-            <p className="text-sm text-slate-500 font-medium mb-6">Completa los datos para iniciar un nuevo proyecto.</p>
-            
-            <form onSubmit={handleEnviarSolicitud} className="flex flex-col gap-5">
-              
-              {/* Selector de Marca */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Marca *</label>
-                <select 
-                  required
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all appearance-none"
-                  value={formSolicitud.marca}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, marca: e.target.value})}
-                >
-                  <option value="">Selecciona una marca...</option>
-                  {assignedClients.map(c => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                  {assignedClients.length === 0 && (
-                    <>
-                      <option value="Sanfer">Sanfer</option>
-                      <option value="Ferring">Ferring</option>
-                    </>
+      {/* Ruta de Calidad APC */}
+      <div className="bg-white border border-slate-100 p-8 rounded-3xl space-y-6 shadow-xl shadow-slate-100/50">
+        <div>
+          <h3 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <span className="w-2.5 h-2.5 bg-apc-pink rounded-full"></span>
+            Ruta de Calidad APC
+          </h3>
+          <p className="text-xs text-slate-500 font-medium">
+            Conoce el proceso completo de trazabilidad e inspección por el que pasa cada una de tus solicitudes antes de la entrega final.
+          </p>
+        </div>
+
+        <div className="w-full relative px-2">
+          {/* Thread connection line for lg screens */}
+          <div className="absolute top-10 left-12 right-12 h-1 bg-gradient-to-r from-slate-900 via-apc-pink to-emerald-500 rounded-full z-0 hidden lg:block" />
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4 relative z-10">
+            {[
+              { label: 'Cuentas', desc: 'Brief y Filtro Inicial', color: 'bg-slate-900', textColor: 'text-slate-900', pulseColor: 'bg-slate-900/10' },
+              { label: 'Creativo', desc: 'Idea y Redacción', color: 'bg-apc-pink', textColor: 'text-apc-pink', pulseColor: 'bg-apc-pink/10' },
+              { label: 'Médico', desc: 'SLA Regulatorio', color: 'bg-apc-teal', textColor: 'text-apc-teal', pulseColor: 'bg-apc-teal/10' },
+              { label: 'Arte', desc: 'Diseño Gráfico', color: 'bg-amber-500', textColor: 'text-amber-500', pulseColor: 'bg-amber-500/10' },
+              { label: 'Audio y Video', desc: 'Producción Audiovisual', color: 'bg-indigo-600', textColor: 'text-indigo-600', pulseColor: 'bg-indigo-600/10' },
+              { label: 'Digital', desc: 'Mailing & Ads', color: 'bg-apc-green', textColor: 'text-apc-green', pulseColor: 'bg-apc-green/10' },
+              { label: 'Innovación', desc: 'Interactivos Especiales', color: 'bg-purple-600', textColor: 'text-purple-600', pulseColor: 'bg-purple-600/10' },
+              { label: 'Cuentas', desc: 'QA y Auditoría Final', color: 'bg-slate-800', textColor: 'text-slate-800', pulseColor: 'bg-slate-800/10' },
+              { label: '¡Llega a ti!', desc: 'Entregable Aprobado', color: 'bg-emerald-500', textColor: 'text-emerald-600', pulseColor: 'bg-emerald-500/10', isLast: true },
+            ].map((step, idx) => (
+              <div 
+                key={idx} 
+                className="flex flex-col items-center text-center group relative h-full justify-between"
+              >
+                {/* Flow Node representing point on path */}
+                <div className="relative z-10 flex items-center justify-center w-20 h-20 mb-3 flex-shrink-0">
+                  {/* Concentric pulse ring */}
+                  <div className={`absolute inset-0 rounded-full ${step.pulseColor} opacity-70 scale-95 group-hover:scale-115 group-hover:opacity-90 transition-all duration-300 pointer-events-none`} />
+                  
+                  {/* Concentric node border */}
+                  <div className="absolute inset-2 rounded-full border-2 border-white bg-white shadow-md flex items-center justify-center w-16 h-16 group-hover:shadow-lg transition-all duration-300">
+                    <span className={`w-10 h-10 rounded-full text-white text-[11px] font-black flex items-center justify-center shadow-sm ${step.color} transition-transform duration-300 group-hover:scale-110`}>
+                      {idx + 1}
+                    </span>
+                  </div>
+                  
+                  {/* Desktop connecting arrow - highly visible floating element */}
+                  {!step.isLast && (
+                    <div className="hidden lg:flex absolute top-10 -right-5 translate-x-1/2 -translate-y-1/2 z-30 items-center justify-center bg-white border-2 border-slate-100 rounded-full w-7 h-7 shadow-[0_3px_10px_rgba(0,0,0,0.12)] text-apc-pink group-hover:text-emerald-500 group-hover:scale-110 group-hover:border-slate-200 transition-all duration-300">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                      </svg>
+                    </div>
                   )}
-                </select>
-              </div>
 
-              {/* Campaña */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre de la Campaña *</label>
-                <input 
-                  type="text" required 
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
-                  placeholder="Ej: Campaña Lanzamiento Q3"
-                  value={formSolicitud.campana}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, campana: e.target.value})}
-                />
-              </div>
+                  {/* Mobile & Small screens connecting symbol (visible on non-lg layouts) */}
+                  {!step.isLast && (
+                    <span className="absolute -right-4.5 top-10 -translate-y-1/2 text-apc-pink font-black text-xs lg:hidden z-20 bg-white shadow-md border-2 border-slate-50 rounded-full w-6 h-6 flex items-center justify-center group-hover:bg-slate-100 transition-all">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                      </svg>
+                    </span>
+                  )}
+                </div>
 
-              {/* Tipo de Material */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Material *</label>
-                <input 
-                  type="text" required 
-                  placeholder="Ej: Video, Brochure, Post..." 
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
-                  value={formSolicitud.tipoMaterial}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, tipoMaterial: e.target.value})}
-                />
+                {/* Description details card */}
+                <div className="bg-slate-50/55 group-hover:bg-slate-50 border border-slate-100/80 group-hover:border-slate-200 p-2.5 rounded-2xl w-full flex-1 flex flex-col justify-center min-h-[64px] transition-all">
+                  <h4 className={`text-[11px] font-black tracking-tight uppercase leading-snug mb-1 ${step.textColor}`}>
+                    {step.label}
+                  </h4>
+                  <p className="text-[8px] leading-snug text-slate-400 font-extrabold uppercase tracking-wider">
+                    {step.desc}
+                  </p>
+                </div>
               </div>
-
-              {/* Descripción Extensa */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción Detallada *</label>
-                <textarea 
-                  required rows={3} 
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all resize-none"
-                  placeholder="Describe de forma extensa el material o campaña que estás solicitando..."
-                  value={formSolicitud.descripcion}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, descripcion: e.target.value})}
-                ></textarea>
-              </div>
-
-               {/* Objetivo */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Objetivo de la Campaña / Material *</label>
-                <input 
-                  type="text" required 
-                  placeholder="Ej: Aumentar el conocimiento del producto en..." 
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
-                  value={formSolicitud.objetivo}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, objetivo: e.target.value})}
-                />
-              </div>
-
-              {/* Posicionamiento */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Posicionamiento *</label>
-                <input 
-                  type="text" required 
-                  placeholder="Ej: El único tratamiento de una sola dosis..." 
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
-                  value={formSolicitud.posicionamiento}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, posicionamiento: e.target.value})}
-                />
-              </div>
-
-              {/* Insights Clave */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Insights Clave del Producto</label>
-                <textarea 
-                  rows={2} 
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all resize-none"
-                  placeholder="Ej: Los pacientes prefieren tratamientos sin sabor..."
-                  value={formSolicitud.insights}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, insights: e.target.value})}
-                ></textarea>
-              </div>
-
-              {/* Referencias o Materiales */}
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Referencias o Materiales (Links)</label>
-                <input 
-                  type="text" 
-                  placeholder="Ej: Drive con logotipos o manual de marca..." 
-                  className="w-full border-2 border-slate-100 p-4 rounded-2xl bg-slate-50 outline-none focus:border-apc-pink font-bold text-slate-700 transition-all"
-                  value={formSolicitud.referencias}
-                  onChange={(e) => setFormSolicitud({...formSolicitud, referencias: e.target.value})}
-                />
-              </div>
-
-              {/* Botones de acción del Modal */}
-              <div className="flex justify-end gap-3 mt-4">
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)} 
-                  className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-all"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="px-8 py-3 bg-emerald-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
-                >
-                  Enviar Solicitud
-                </button>
-              </div>
-            </form>
+            ))}
           </div>
         </div>
+
+        <div className="bg-slate-50 rounded-2xl p-4 border border-dashed border-slate-200/60 flex items-center gap-3">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <p className="text-[9px] text-slate-500 font-extrabold uppercase tracking-widest italic animate-fadeIn">
+            * Cada cambio de fase incluye checks automáticos de control de calidad bajo la certificación ISO 9001:2015.
+          </p>
+        </div>
+      </div>
+
+      {/* Modal Nueva ODT (Pre-armado) */}
+      {isModalOpen && targetClient && (
+        <NewODTForm 
+          client={targetClient} 
+          isClient={true} 
+          onClose={() => setIsModalOpen(false)} 
+        />
       )}
     </div>
     

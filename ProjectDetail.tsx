@@ -49,6 +49,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   React.useEffect(() => {
     setNewId(project.id);
   }, [project.id]);
+
+  React.useEffect(() => {
+    setPresentationLink(project.presentation_link || '');
+    setPresentationVersion(project.presentation_version || 'v1');
+  }, [project.presentation_link, project.presentation_version]);
   const [qaFeedback, setQaFeedback] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
   const [deliveryLink, setDeliveryLink] = useState('');

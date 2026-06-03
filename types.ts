@@ -107,6 +107,13 @@ export interface Project {
   client_feedback?: string;
   correction_count_after_presentation?: number;
   enStandby?: boolean;
+  historial_versiones?: {
+    version: string;
+    link: string;
+    date: string;
+    feedback: string;
+    comment: string;
+  }[];
   // Campaign Mode fields
   esCampana?: boolean;
   detalleEntregableCampaña?: string;

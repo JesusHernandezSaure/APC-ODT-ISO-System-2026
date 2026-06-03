@@ -53,11 +53,13 @@ const AgencyHubView: React.FC = () => {
   }, [projects, user, selectedBrandId]);
 
   // Helper for status translation
-  const translateStatusForClient = (etapaActual: string, enStandby?: boolean) => {
-    if (enStandby) return { text: '✅ Lista para Revisión', color: 'bg-apc-pink text-white' };
+  const translateStatusForClient = (p: Project) => {
+    if (p.enStandby) return { text: '✅ Lista para Revisión', color: 'bg-apc-pink text-white' };
     
-    const etapaUpper = etapaActual.toUpperCase();
-    if (etapaUpper.includes('APROBADA') || etapaUpper.includes('FINALIZADA') || etapaUpper.includes('ADMINISTRACIÓN') || etapaUpper.includes('CIERRE')) {
+    const etapaUpper = (p.etapa_actual || '').toUpperCase();
+    const statusUpper = (p.status || '').toUpperCase();
+    
+    if (statusUpper.includes('FINALIZADO') || statusUpper.includes('PAGO') || etapaUpper.includes('ADMINISTRACIÓN')) {
       return { text: '🎉 Entregada', color: 'bg-emerald-100 text-emerald-700' };
     }
     
@@ -227,7 +229,7 @@ const AgencyHubView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filteredProjects.map(p => {
-                  const status = translateStatusForClient(p.etapa_actual, p.enStandby);
+                  const status = translateStatusForClient(p);
                   return (
                     <tr key={p.id} className="group hover:bg-slate-50/50 transition-all">
                       <td className="px-8 py-6">

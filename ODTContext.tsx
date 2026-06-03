@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { ref, onValue, update, get, set, query, orderByChild, equalTo, limitToLast } from "firebase/database";
 import { db } from './firebase';
 import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material, Notification as ProjectNotification, ProjectComment } from './types';
-import { GLOBAL_STAGES, calculateRoadmap, getPriorityInfo, normalizeString } from './workflowConfig';
+import { GLOBAL_STAGES, calculateRoadmap, normalizeString } from './workflowConfig';
 
 const ODTContext = createContext<ODTContextType | undefined>(undefined);
 
@@ -90,7 +90,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Si es cliente pero no tiene marcas, vaciamos la lista y terminamos
       if (marcas.length === 0) {
-        setProjects([]);
+        setTimeout(() => setProjects([]), 0);
       } else {
         // Objeto temporal para ir guardando las ODTs de cada marca sin sobreescribirse
         const resultadosPorMarca: Record<string, Project[]> = {};
@@ -330,7 +330,6 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // SLA and Priority Background Check
-  const lastAlertCheck = useRef<number>(0);
 
   // borramos el código de alerta de 3 días en el área
 
@@ -890,19 +889,25 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
+    const now = new Date().toISOString();
+    const periods = [...(project.client_standby_periods || [])];
+    periods.push({ start: now });
+
     const updates: Record<string, unknown> = {
       presentation_link: link,
       presentation_version: version,
-      presentation_date: new Date().toISOString(),
+      presentation_date: now,
       status: 'En revisión con cliente',
-      updatedAt: new Date().toISOString(),
+      enStandby: true,
+      client_standby_periods: periods,
+      updatedAt: now,
       comentarios: [
         {
           id: `status-${Date.now()}`,
           authorId: user.id,
           authorName: user.name,
-          text: `Cambio de Status: En revisión con cliente`,
-          createdAt: new Date().toISOString(),
+          text: `Cambio de Status: En revisión con cliente (Standby activado)`,
+          createdAt: now,
           isSystemEvent: true
         },
         {
@@ -972,6 +977,24 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result === 'rejected' || newCorrectionCount >= 3) {
         updates.is_alarm_active = true;
         alarmTriggered = true;
+      }
+
+      // RESPALDO HISTÓRICO Y LIMPIEZA
+      if (project.presentation_link) {
+        const newHistoryItem = {
+          version: project.presentation_version || 'v1',
+          link: project.presentation_link || '',
+          date: project.presentation_date || now,
+          feedback: result,
+          comment: feedback
+        };
+        const existingHistory = project.historial_versiones || [];
+        updates.historial_versiones = [...existingHistory, newHistoryItem];
+
+        // REINICIO DE CAMPOS PRINCIPALES
+        updates.presentation_link = null;
+        updates.presentation_version = null;
+        updates.presentation_date = null;
       }
 
       if (project.esCampana && selectedAreas && selectedAreas.length > 0) {
@@ -1585,7 +1608,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         // Handle Rejection from Client specific logic if needed
-        if (comment.includes('SOLICITÓ CAMBIOS')) {
+        if (comment.includes('SOLICITÓ CAMBIOS') || newStatus === 'Correcciones') {
           updates.etapa_actual = 'Cuentas';
           updates.etapaActual = 'Cuentas';
           // Move stage index back if possible
@@ -1593,6 +1616,25 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const countsIndex = stages.indexOf('Cuentas');
           if (countsIndex !== -1) {
             updates.current_stage_index = countsIndex;
+          }
+
+          // RESPALDO HISTÓRICO Y LIMPIEZA
+          if (project.presentation_link) {
+            const cleanFeedbackComment = comment.replace('🛑 CLIENTE SOLICITÓ CAMBIOS:', '').trim();
+            const newHistoryItem = {
+              version: project.presentation_version || 'v1',
+              link: project.presentation_link || '',
+              date: project.presentation_date || now,
+              feedback: newStatus === 'Correcciones' ? 'rejected' : 'approved_with_corrections',
+              comment: cleanFeedbackComment || comment
+            };
+            const existingHistory = project.historial_versiones || [];
+            updates.historial_versiones = [...existingHistory, newHistoryItem];
+
+            // REINICIO DE CAMPOS PRINCIPALES
+            updates.presentation_link = null;
+            updates.presentation_version = null;
+            updates.presentation_date = null;
           }
         }
 

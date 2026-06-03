@@ -17,8 +17,9 @@ const AgencyHubODTDetail: React.FC = () => {
 
     const isFinalized = useMemo(() => {
         if (!project) return false;
-        const stage = project.etapa_actual.toUpperCase();
-        return stage.includes('APROBADA') || stage.includes('FINALIZADA') || stage.includes('ADMINISTRACIÓN') || stage.includes('CIERRE');
+        const stage = (project.etapa_actual || '').toUpperCase();
+        const status = (project.status || '').toUpperCase();
+        return status.includes('FINALIZADO') || status.includes('PAGO') || stage.includes('ADMINISTRACIÓN');
     }, [project]);
 
     // Find the assigned executive (responsible)
@@ -329,6 +330,52 @@ const AgencyHubODTDetail: React.FC = () => {
                             )}
                         </div>
                     </div>
+
+                    {/* Historial de Versiones */}
+                    {project.historial_versiones && project.historial_versiones.length > 0 && (
+                        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden p-8 space-y-6">
+                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                                <Icons.Menu className="w-4 h-4 text-apc-pink rotate-180" /> Historial de Versiones
+                            </h3>
+                            <div className="divide-y divide-slate-100">
+                                {project.historial_versiones.map((item, idx) => (
+                                    <div key={idx} className="py-5 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                        <div className="space-y-1.5 flex-1">
+                                            <div className="flex items-center gap-3 flex-wrap">
+                                                <span className="px-2.5 py-1 bg-slate-100 text-slate-700 font-mono font-black text-[10px] uppercase rounded-lg">
+                                                    Versión {item.version}
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase">
+                                                    {new Date(item.date).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).toUpperCase()}
+                                                </span>
+                                            </div>
+                                            {item.comment && (
+                                                <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-100/50 mt-2 text-slate-700 text-xs font-medium">
+                                                    <span className="font-extrabold text-slate-400 text-[9px] block uppercase mb-1 tracking-wider">Ajuste Solicitado por el Cliente:</span>
+                                                    <p className="whitespace-pre-wrap leading-relaxed">{item.comment}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex-shrink-0 md:self-center">
+                                            {item.link ? (
+                                                <a 
+                                                    href={item.link} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-[9px] uppercase tracking-widest rounded-xl transition-all"
+                                                >
+                                                    Ver material
+                                                    <Icons.Ai className="w-3.5 h-3.5 text-apc-pink" />
+                                                </a>
+                                            ) : (
+                                                    <span className="text-slate-300 font-black text-[9px] uppercase tracking-widest italic">Sin enlace</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Support Banner */}
                     <div className="bg-apc-green/5 border border-apc-green/10 p-6 rounded-[1.5rem] flex items-center gap-4">

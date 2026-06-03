@@ -223,6 +223,7 @@ export interface ODTContextType {
   updateBrief: (projectId: string, content: string) => Promise<void>;
   processQA: (projectId: string, approved: boolean, feedback: string) => Promise<string | void>;
   processAccountsReview: (projectId: string, approved: boolean, feedback: string, returnToArea?: string, selectedAreas?: string[]) => Promise<void>;
+  delegateClientCorrections: (projectId: string, instructions: string, returnToArea?: string, selectedAreas?: string[]) => Promise<void>;
   submitForPresentation: (projectId: string, link: string, version: string) => Promise<void>;
   processClientFeedback: (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string, selectedAreas?: string[]) => Promise<void>;
   updateBilling: (projectId: string, facturado: boolean, justification?: string) => Promise<void>;

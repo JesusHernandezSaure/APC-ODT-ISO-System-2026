@@ -1,19 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { useODT } from './ODTContext';
-import { Project, UserRole } from './types';
+import { UserRole } from './types';
 import { Icons } from './constants';
-import { normalizeString } from './workflowConfig';
 import { ref, onValue, get, update } from "firebase/database";
 import { db } from './firebase';
 
 export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) => void }) => {
-  const { user, projects: allProjects, users, syncCalendarEvent } = useODT();
+  const { user } = useODT();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedProject, setSelectedProject] = useState<any | null>(null);
-  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState('');
+  const [selectedProject, setSelectedProject] = useState<Record<string, unknown> | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<Record<string, unknown>[]>([]);
 
   const month = currentDate.getMonth();
   const year = currentDate.getFullYear();
@@ -35,7 +32,7 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
     const unsub = onValue(eventsRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        const list = Object.values(data).filter((e: any) => !e.deleted);
+        const list = Object.values(data).filter((e: Record<string, unknown>) => !e.deleted);
         setCalendarEvents(list);
       } else {
         setCalendarEvents([]);
@@ -71,7 +68,7 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
       }
 
       const allProjectsData = snapshot.val();
-      const updates: any = {};
+      const updates: Record<string, unknown> = {};
       let count = 0;
 
       // 2. Iteramos sobre todos los proyectos
@@ -106,10 +103,9 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
     }
   };
 
-  const renderProjectDetail = (p: any) => {
+  const renderProjectDetail = (p: Record<string, unknown>) => {
     // Para el detalle complemamos con datos que podrían no estar en el evento ligero 
     // pero intentamos usar lo que tenemos. Si el usuario abre la ODT completa, ahí verá todo.
-    const currentStage = p.etapa_actual || '';
     
     const now = new Date();
     

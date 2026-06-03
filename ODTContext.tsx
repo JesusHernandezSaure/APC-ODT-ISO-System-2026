@@ -772,6 +772,61 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const delegateClientCorrections = async (projectId: string, instructions: string, returnToArea?: string, selectedAreas?: string[]) => {
+    if (!db || !user) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const stages = getRoadmapStages(project);
+    let targetArea = returnToArea || stages[project.current_stage_index - 1];
+
+    if (project.esCampana && selectedAreas && selectedAreas.length > 0) {
+      const newEstadoPorArea = { ...(project.estadoPorArea || {}) };
+      selectedAreas.forEach(area => {
+        newEstadoPorArea[area] = 'En Proceso';
+      });
+      targetArea = selectedAreas.join(', ');
+      
+      const updates: Record<string, unknown> = {
+        estadoPorArea: newEstadoPorArea,
+        status: 'Correcciones',
+        etapa_actual: 'PRODUCCIÓN PARALELA',
+        etapaActual: 'PRODUCCIÓN PARALELA',
+        current_stage_index: 1, // Back to production phase
+        accounts_approval_ok: false,
+        updatedAt: new Date().toISOString(),
+        comentarios: [{
+          id: `del-corr-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `CUENTAS: Asignando correcciones del cliente. MODO CAMPAÑA: Rollback selectivo a [${targetArea}]. Instrucciones Cuentas: ${instructions}`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }, ...(project.comentarios || [])]
+      };
+      await update(ref(db, `projects/${projectId}`), updates);
+    } else {
+      const targetIndex = stages.indexOf(targetArea);
+      
+      const updates: Record<string, unknown> = {
+        current_stage_index: targetIndex,
+        etapa_actual: targetArea,
+        etapaActual: targetArea,
+        accounts_approval_ok: false,
+        status: 'Correcciones',
+        updatedAt: new Date().toISOString(),
+        comentarios: [{
+          id: `del-corr-${Date.now()}`,
+          authorId: user.id,
+          authorName: user.name,
+          text: `CUENTAS: Asignando correcciones del cliente. Regresando a [${targetArea}]. Instrucciones Cuentas: ${instructions}`,
+          createdAt: new Date().toISOString(),
+          isSystemEvent: true
+        }, ...(project.comentarios || [])]
+      };
+      await update(ref(db, `projects/${projectId}`), updates);
+    }
+  };
   const processAccountsReview = async (projectId: string, approved: boolean, feedback: string, returnToArea?: string, selectedAreas?: string[]) => {
     if (!db || !user) return;
     const project = projects.find(p => p.id === projectId);
@@ -1642,6 +1697,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
       processQA, 
       processAccountsReview,
+      delegateClientCorrections,
       submitForPresentation,
       processClientFeedback,
       updateBilling, updatePaymentStatus,

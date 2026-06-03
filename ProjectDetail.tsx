@@ -25,6 +25,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     addMaterial, 
     updateMaterialStatus,
     processAccountsReview,
+    delegateClientCorrections,
     submitForPresentation,
     processClientFeedback,
     addTraceabilityComment,
@@ -1250,8 +1251,67 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
               <Icons.Check className="w-4 h-4" /> Cierre y Calidad de Cuentas
             </h3>
 
-            {/* Step 1: Quality Review */}
-            {!project.accounts_approval_ok ? (
+            {/* Client Corrections Handing */}
+            {project.status === 'Correcciones' ? (
+              <div className="space-y-4 p-4 bg-rose-50 rounded-2xl border border-rose-100">
+                <p className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-2">
+                  <Icons.Alert className="w-4 h-4 text-rose-500" />
+                  Delegar Correcciones del Cliente
+                </p>
+                <textarea 
+                  placeholder="Instrucciones adicionales para el equipo..."
+                  className="w-full bg-white border border-rose-200 rounded-xl p-3 text-xs outline-none font-medium h-16"
+                  value={accountsFeedback}
+                  onChange={(e) => setAccountsFeedback(e.target.value)}
+                />
+                <div className="flex flex-col gap-2">
+                  {project.esCampana ? (
+                    <div className="p-3 bg-white border border-rose-200 rounded-xl space-y-2">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Áreas a corregir:</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(project.areas_seleccionadas || []).map(area => (
+                          <label key={area} className="flex items-center gap-2 cursor-pointer">
+                            <input 
+                              type="checkbox"
+                              checked={selectedAreasToReturn.includes(area)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedAreasToReturn([...selectedAreasToReturn, area]);
+                                else setSelectedAreasToReturn(selectedAreasToReturn.filter(a => a !== area));
+                              }}
+                              className="w-4 h-4 rounded text-apc-pink"
+                            />
+                            <span className="text-[10px] font-bold text-slate-600">{area}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <select 
+                      className="w-full text-[10px] p-3 border border-rose-200 rounded-xl bg-white font-bold"
+                      value={returnArea}
+                      onChange={(e) => setReturnArea(e.target.value)}
+                    >
+                      <option value="">Regresar a área...</option>
+                      {(project.areas_seleccionadas || []).map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  )}
+                  <button 
+                    onClick={() => {
+                      if (!accountsFeedback) { alert("Debe dejar instrucciones."); return; }
+                      if (project.esCampana && selectedAreasToReturn.length === 0) { alert("Seleccione al menos un área."); return; }
+                      if (!project.esCampana && !returnArea) { alert("Seleccione área de retorno."); return; }
+                      delegateClientCorrections(project.id, accountsFeedback, returnArea, selectedAreasToReturn);
+                      setAccountsFeedback('');
+                      setReturnArea('');
+                      setSelectedAreasToReturn([]);
+                    }}
+                    className="w-full py-3 bg-rose-600 text-white font-black text-[10px] rounded-xl hover:bg-rose-700 uppercase tracking-widest shadow-md"
+                  >
+                    ENVIAR A CORRECCIONES
+                  </button>
+                </div>
+              </div>
+            ) : !project.accounts_approval_ok ? (
               <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <p className="text-[10px] font-black text-slate-500 uppercase">1. Revisión de Calidad Operativa</p>
                 <textarea 
@@ -1316,7 +1376,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
             ) : (
               <div className="space-y-4">
                 {/* Step 2: Presentation Setup */}
-                {!project.presentation_date ? (
+                {!project.presentation_date && project.status !== 'Correcciones' ? (
                   <div className="space-y-4 p-4 bg-blue-50 rounded-2xl border border-blue-100">
                     <p className="text-[10px] font-black text-blue-600 uppercase">2. Preparación para Cliente</p>
                     <input 

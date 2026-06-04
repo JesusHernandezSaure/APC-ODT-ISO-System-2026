@@ -11,6 +11,8 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedProject, setSelectedProject] = useState<Record<string, unknown> | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<Record<string, unknown>[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
 
   const month = currentDate.getMonth();
   const year = currentDate.getFullYear();
@@ -57,13 +59,15 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
 
   const handleSyncHistory = async () => {
     try {
-      alert("Iniciando sincronización... Por favor espera.");
+      setIsSyncing(true);
+      setSyncMessage("Iniciando sincronización... Por favor espera.");
       
       // 1. Descargamos el historial directamente de Firebase (no del contexto)
       const snapshot = await get(ref(db, 'projects'));
       
       if (!snapshot.exists()) {
-        alert("No se encontraron proyectos en la base de datos.");
+        setIsSyncing(false);
+        setSyncMessage("No se encontraron proyectos en la base de datos.");
         return;
       }
 
@@ -92,14 +96,16 @@ export const CalendarView = ({ onOpenProject }: { onOpenProject: (id: string) =>
       // 3. Guardamos todo de golpe en el nuevo nodo
       if (Object.keys(updates).length > 0) {
         await update(ref(db, 'calendar_events'), updates);
-        alert(`¡Éxito! Se copiaron ${count} ODTs activas al calendario.`);
+        setSyncMessage(`¡Éxito! Se sincronizaron ${count} ODTs.`);
       } else {
-        alert("No hay proyectos activos para sincronizar.");
+        setSyncMessage("No hay proyectos activos para sincronizar.");
       }
+      setIsSyncing(false);
       
     } catch (error) {
       console.error("Error en la sincronización:", error);
-      alert("Hubo un error. Revisa la consola (F12) con clic derecho -> Inspeccionar.");
+      setIsSyncing(false);
+      setSyncMessage("Hubo un error de sincronización.");
     }
   };
 

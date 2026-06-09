@@ -168,11 +168,14 @@ export const generateMasterReport = (projects: Project[], users: User[], dateFro
  * Downloads a CSV file with UTF-8 BOM for Excel compatibility.
  */
 export const downloadMasterCSV = (data: Record<string, string | number>[], filename: string) => {
-  if (data.length === 0) return;
+  if (data.length === 0) {
+    alert("No hay datos para generar el reporte maestro.");
+    return;
+  }
   
   const headers = Object.keys(data[0]);
   const csvContent = [
-    headers.join(','),
+    headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(','),
     ...data.map(row => headers.map(header => {
       const val = row[header] === null || row[header] === undefined ? '' : row[header];
       return `"${String(val).replace(/"/g, '""')}"`;
@@ -235,11 +238,84 @@ export const calculateWorkingTime = (start: Date, end: Date, isFelipe: boolean =
   };
 };
 
-export const generateAreaReport = (projects: Project[], users: User[], area: string) => {
+export const generateAreaReport = (projects: Project[], users: User[], area: string, memberFilter?: string) => {
   const areaNorm = normalizeString(area);
-  const areaProjects = projects.filter(p => 
-    p.areas_seleccionadas?.some(a => normalizeString(a) === areaNorm)
-  );
+  
+  if (areaNorm === 'qa' || areaNorm === 'médico' || areaNorm === 'médica') {
+    const qaRows: Record<string, string | number>[] = [];
+    
+    projects.forEach(p => {
+      const qaComments = p.comentarios?.filter(c => 
+        (c.isSystemEvent && (c.text?.includes('APROBADO en [REVISIÓN QA') || c.text?.includes('RECHAZADO en [REVISIÓN QA'))) ||
+        (!c.isSystemEvent && c.text?.includes('ha validado:'))
+      ) || [];
+
+      const sortedComments = [...(p.comentarios || [])].sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      qaComments.forEach(qaAction => {
+        if (memberFilter && memberFilter !== 'all' && qaAction.authorId !== memberFilter) {
+          return;
+        }
+
+        const actionTime = new Date(qaAction.createdAt);
+        let entryTime = new Date(p.createdAt);
+        
+        const priorEntry = sortedComments.filter(c => 
+          c.isSystemEvent && 
+          c.text?.includes('Enviado a [REVISIÓN QA') && 
+          new Date(c.createdAt).getTime() <= actionTime.getTime()
+        ).pop();
+
+        if (priorEntry) {
+          entryTime = new Date(priorEntry.createdAt);
+        } else {
+          const actionIdx = sortedComments.findIndex(c => c.id === qaAction.id);
+          if (actionIdx > 0) {
+            entryTime = new Date(sortedComments[actionIdx - 1].createdAt);
+          }
+        }
+
+        const isFelipe = qaAction.authorName?.toLowerCase().includes('felipe lópez') || false;
+        const timeSpent = calculateWorkingTime(entryTime, actionTime, isFelipe).totalHours;
+
+        let result = '';
+        if (qaAction.text?.includes('APROBADO en')) result = 'Aprobación / Check OK';
+        else if (qaAction.text?.includes('RECHAZADO en')) result = 'Rechazo';
+        else if (qaAction.text?.includes('ha validado:')) result = 'Check Validación de Calidad';
+
+        let evaluatedArea = 'N/A';
+        const areaMatch = qaAction.text?.match(/\[REVISIÓN QA \((.*?)\)\]/);
+        if (areaMatch) {
+            evaluatedArea = areaMatch[1];
+        } else if (qaAction.text?.includes('ha validado:')) {
+            evaluatedArea = 'Contenido Técnico/Médico';
+        }
+
+        const feedbackMatch = qaAction.text?.split('Feedback: ')[1];
+        const feedback = feedbackMatch ? feedbackMatch.split('. Regresando')[0] : '';
+        
+        qaRows.push({
+          'Integrante Evaluador': qaAction.authorName || 'Desconocido',
+          'ID ODT': p.id,
+          'Empresa': p.empresa || '',
+          'Marca': p.marca || '',
+          'Resultado de Evaluación': result,
+          'Área de Origen Evaluada': evaluatedArea,
+          'Fecha de Acción': qaAction.createdAt,
+          'Tiempo de Revisión (Horas Laborales)': timeSpent,
+          'Comentarios / Feedback': feedback || qaAction.text || ''
+        });
+      });
+    });
+
+    return qaRows.sort((a,b) => new Date(b['Fecha de Acción'] as string).getTime() - new Date(a['Fecha de Acción'] as string).getTime());
+  }
+
+  let areaProjects = projects.filter(p => p.areas_seleccionadas?.some(a => normalizeString(a) === areaNorm));
+
+  if (memberFilter && memberFilter !== 'all') {
+    areaProjects = areaProjects.filter(p => p.asignaciones?.some(a => normalizeString(a.area) === areaNorm && (a.usuarioIds?.includes(memberFilter) || a.usuarioId === memberFilter)));
+  }
 
   const rows: Record<string, string | number>[] = [];
 
@@ -291,29 +367,26 @@ export const generateAreaReport = (projects: Project[], users: User[], area: str
     // Medical specific fields
     if (areaNorm === 'médico' || areaNorm === 'médica' || areaNorm === 'qa') {
       const checklist = p.qaChecklist;
-      if (checklist) {
-        row['Check Médico'] = checklist.medica ? 'SÍ' : 'NO';
-        row['Check Médico Por'] = users.find(u => u.id === checklist.medicaUserId)?.name || '';
-        row['Check Médico Fecha'] = checklist.medicaTimestamp || '';
-        
-        row['Check Estilo'] = checklist.estilo ? 'SÍ' : 'NO';
-        row['Check Estilo Por'] = users.find(u => u.id === checklist.estiloUserId)?.name || '';
-        row['Check Estilo Fecha'] = checklist.estiloTimestamp || '';
-        
-        row['Check Referencias'] = checklist.referencias ? 'SÍ' : 'NO';
-        row['Check Referencias Por'] = users.find(u => u.id === checklist.referenciasUserId)?.name || '';
-        row['Check Referencias Fecha'] = checklist.referenciasTimestamp || '';
+      row['Check Médico'] = checklist?.medica ? 'SÍ' : 'NO';
+      row['Check Médico Por'] = users.find(u => u.id === checklist?.medicaUserId)?.name || '';
+      row['Check Médico Fecha'] = checklist?.medicaTimestamp || '';
+      
+      row['Check Estilo'] = checklist?.estilo ? 'SÍ' : 'NO';
+      row['Check Estilo Por'] = users.find(u => u.id === checklist?.estiloUserId)?.name || '';
+      row['Check Estilo Fecha'] = checklist?.estiloTimestamp || '';
+      
+      row['Check Referencias'] = checklist?.referencias ? 'SÍ' : 'NO';
+      row['Check Referencias Por'] = users.find(u => u.id === checklist?.referenciasUserId)?.name || '';
+      row['Check Referencias Fecha'] = checklist?.referenciasTimestamp || '';
 
-        // Calculate time between checks if available
-        if (checklist.medicaTimestamp && checklist.estiloTimestamp) {
-            const t = calculateWorkingTime(new Date(checklist.medicaTimestamp), new Date(checklist.estiloTimestamp), isFelipeAssigned);
-            row['Tiempo Médico -> Estilo (Horas)'] = t.totalHours;
-        }
-        if (checklist.estiloTimestamp && checklist.referenciasTimestamp) {
-            const t = calculateWorkingTime(new Date(checklist.estiloTimestamp), new Date(checklist.referenciasTimestamp), isFelipeAssigned);
-            row['Tiempo Estilo -> Referencias (Horas)'] = t.totalHours;
-        }
-      }
+      // Calculate time between checks if available
+      row['Tiempo Médico -> Estilo (Horas)'] = (checklist?.medicaTimestamp && checklist?.estiloTimestamp) 
+        ? calculateWorkingTime(new Date(checklist.medicaTimestamp), new Date(checklist.estiloTimestamp), isFelipeAssigned).totalHours 
+        : '';
+        
+      row['Tiempo Estilo -> Referencias (Horas)'] = (checklist?.estiloTimestamp && checklist?.referenciasTimestamp)
+        ? calculateWorkingTime(new Date(checklist.estiloTimestamp), new Date(checklist.referenciasTimestamp), isFelipeAssigned).totalHours
+        : '';
     }
 
     rows.push(row);
@@ -323,18 +396,22 @@ export const generateAreaReport = (projects: Project[], users: User[], area: str
 };
 
 export const downloadCSV = (data: Record<string, string | number>[], filename: string) => {
-  if (data.length === 0) return;
+  if (data.length === 0) {
+    alert("No hay datos para generar el reporte.");
+    return;
+  }
   
   const headers = Object.keys(data[0]);
   const csvContent = [
-    headers.join(','),
+    headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(','),
     ...data.map(row => headers.map(header => {
       const val = row[header] === null || row[header] === undefined ? '' : row[header];
       return `"${String(val).replace(/"/g, '""')}"`;
     }).join(','))
   ].join('\n');
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const BOM = '\uFEFF';
+  const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   link.setAttribute('href', url);

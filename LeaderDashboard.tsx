@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useODT } from './ODTContext';
 import { UserRole, Project, User, ProjectAssignment } from './types';
 import { normalizeString } from './workflowConfig';
-import { generateAreaReport, downloadCSV } from './reportUtils';
+import { generateAreaReport, downloadCSV, calculateWorkingTime } from './reportUtils';
 
 interface LeaderDashboardProps {
   onViewProject: (id: string) => void;
@@ -139,10 +139,158 @@ const TeamAssignmentDropdown: React.FC<{
 const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
   const { user, projects, users, delegateProject } = useODT();
   const [memberFilter, setMemberFilter] = useState('all');
+  const [qaTimeRange, setQaTimeRange] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('all');
+
+  const getQAMetrics = (userId: string) => {
+    let approved = 0;
+    let rejected = 0;
+    let checks = 0;
+    let totalHoursSpent = 0;
+    let countReviewed = 0;
+
+    const cutoff = new Date();
+    if (qaTimeRange === 'day') cutoff.setDate(cutoff.getDate() - 1);
+    else if (qaTimeRange === 'week') cutoff.setDate(cutoff.getDate() - 7);
+    else if (qaTimeRange === 'month') cutoff.setMonth(cutoff.getMonth() - 1);
+    else if (qaTimeRange === 'year') cutoff.setFullYear(cutoff.getFullYear() - 1);
+    else cutoff.setFullYear(2000); 
+
+    projects?.forEach(p => {
+      const qaComments = p.comentarios?.filter(c => 
+        (c.isSystemEvent && (c.text?.includes('APROBADO en [REVISIÓN QA') || c.text?.includes('RECHAZADO en [REVISIÓN QA'))) ||
+        (!c.isSystemEvent && c.text?.includes('ha validado:'))
+      ) || [];
+
+      const sortedComments = [...(p.comentarios || [])].sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      qaComments.forEach(qaAction => {
+        if (qaAction.authorId !== userId) return;
+        
+        const actionTime = new Date(qaAction.createdAt);
+        if (actionTime.getTime() < cutoff.getTime()) return;
+
+        let entryTime = new Date(p.createdAt);
+        const priorEntry = sortedComments.filter(c => 
+          c.isSystemEvent && 
+          c.text?.includes('Enviado a [REVISIÓN QA') && 
+          new Date(c.createdAt).getTime() <= actionTime.getTime()
+        ).pop();
+
+        if (priorEntry) {
+          entryTime = new Date(priorEntry.createdAt);
+        } else {
+          const actionIdx = sortedComments.findIndex(c => c.id === qaAction.id);
+          if (actionIdx > 0) {
+            entryTime = new Date(sortedComments[actionIdx - 1].createdAt);
+          }
+        }
+
+        const isFelipe = qaAction.authorName?.toLowerCase().includes('felipe lópez') || false;
+        const timeSpent = calculateWorkingTime(entryTime, actionTime, isFelipe).totalHours;
+
+        totalHoursSpent += timeSpent;
+        countReviewed++;
+
+        if (qaAction.text?.includes('APROBADO en')) approved++;
+        else if (qaAction.text?.includes('RECHAZADO en')) rejected++;
+        else if (qaAction.text?.includes('ha validado:')) checks++;
+      });
+    });
+
+    const avgTime = countReviewed > 0 ? (totalHoursSpent / countReviewed).toFixed(1) : '0';
+
+    return { approved, rejected, checks, avgTime, totalCalificadas: approved + rejected + checks };
+  };
+
+  const getOperativeAreaMetrics = (userId: string, areaName: string) => {
+    let completed = 0;
+    let onTime = 0;
+    let late = 0;
+    let qARejections = 0;
+    let totalHoursSpent = 0;
+
+    const cutoff = new Date();
+    if (qaTimeRange === 'day') cutoff.setDate(cutoff.getDate() - 1);
+    else if (qaTimeRange === 'week') cutoff.setDate(cutoff.getDate() - 7);
+    else if (qaTimeRange === 'month') cutoff.setMonth(cutoff.getMonth() - 1);
+    else if (qaTimeRange === 'year') cutoff.setFullYear(cutoff.getFullYear() - 1);
+    else cutoff.setFullYear(2000); 
+
+    const areaNorm = normalizeString(areaName);
+
+    projects?.forEach(p => {
+      const advancements = p.comentarios?.filter(c => 
+        c.isSystemEvent && c.authorId === userId && 
+        (c.text?.includes('Entrega Técnica') || c.text?.includes('completada'))
+      ) || [];
+
+      const isAssigned = p.asignaciones?.some(a => normalizeString(a.area) === areaNorm && (a.usuarioIds?.includes(userId) || a.usuarioId === userId));
+      
+      if (isAssigned) {
+        const areaRejections = p.comentarios?.filter(c => 
+          c.isSystemEvent && c.text?.includes(`RECHAZADO en [REVISIÓN QA (${areaName})]`) 
+          && new Date(c.createdAt).getTime() >= cutoff.getTime()
+        ) || [];
+        qARejections += areaRejections.length;
+      }
+
+      const areaKey = Object.keys(p.fechasInternas || {}).find(k => normalizeString(k) === areaNorm) || areaName;
+      const deadlineStr = p.fechasInternas ? p.fechasInternas[areaKey] : null;
+
+      const sortedComments = [...(p.comentarios || [])].sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      advancements.forEach(action => {
+        const actionTime = new Date(action.createdAt);
+        if (actionTime.getTime() < cutoff.getTime()) return;
+
+        // Ensure this advancement was actually for the area we're evaluating.
+        // Entrega Técnica or Completada logic usually falls under the user's assignment.
+        // We ensure they are assigned to this area in this project at least.
+        if (!isAssigned) return;
+
+        completed++;
+
+        if (deadlineStr) {
+           const deadline = new Date(deadlineStr);
+           deadline.setHours(23, 59, 59, 999);
+           if (actionTime <= deadline) {
+             onTime++;
+           } else {
+             late++;
+           }
+        }
+
+        let entryTime = new Date(p.createdAt);
+        const priorEntry = sortedComments.filter(c => 
+          c.isSystemEvent && 
+          c.text?.toLowerCase().includes(`enviado a [${areaNorm}`) && 
+          new Date(c.createdAt).getTime() <= actionTime.getTime()
+        ).pop();
+
+        if (priorEntry) {
+          entryTime = new Date(priorEntry.createdAt);
+        } else {
+          const actionIdx = sortedComments.findIndex(c => c.id === action.id);
+          if (actionIdx > 0) {
+             const anyPriorAdvancement = sortedComments.filter((c, i) => i < actionIdx && c.isSystemEvent && (c.text?.includes('completada') || c.text?.includes('APROBADO') || c.text?.includes('RECHAZADO') || c.text?.includes('Entrega Técnica'))).pop();
+             if (anyPriorAdvancement) entryTime = new Date(anyPriorAdvancement.createdAt);
+          }
+        }
+
+        const isFelipe = action.authorName?.toLowerCase().includes('felipe lópez') || false;
+        const timeSpent = calculateWorkingTime(entryTime, actionTime, isFelipe).totalHours;
+        totalHoursSpent += timeSpent;
+      });
+    });
+
+    const avgTime = completed > 0 ? (totalHoursSpent / completed).toFixed(1) : '0';
+
+    return { completed, onTime, late, avgTime, qARejections };
+  };
 
   const handleDownloadReport = () => {
     if (!user || !projects || !users || !activeArea) return;
-    const reportData = generateAreaReport(projects, users, activeArea);
+    const reportData = generateAreaReport(projects, users, activeArea, memberFilter);
     downloadCSV(reportData, `Reporte_Actividades_${activeArea}_${new Date().toISOString().split('T')[0]}`);
   };
 
@@ -271,36 +419,194 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
         </div>
       </header>
 
-      {/* Tarjetas de Carga del Equipo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {teamMembers.map(m => {
-          const load = projects.filter(p => p.asignaciones?.some(a => a.usuarioIds?.includes(m.id) || a.usuarioId === m.id) && p.status !== 'Finalizado').length;
-          const isMe = m.id === user?.id;
-          
-          return (
-            <div key={m.id} className={`p-5 rounded-2xl border transition-all shadow-sm hover:shadow-md ${isMe ? 'bg-apc-green/5 border-apc-green/20' : 'bg-white border-slate-100'}`}>
-              <div className="flex justify-between items-start mb-3">
-                <p className={`text-xs font-black truncate pr-2 ${isMe ? 'text-apc-green' : 'text-slate-800'}`}>
-                  {isMe ? 'Mi Carga (Líder)' : m.name}
-                </p>
-                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
-                  m.role.includes('Lider') || m.role === UserRole.Correccion ? 'bg-apc-green text-white' :
-                  m.role === UserRole.QA_Opera ? 'bg-apc-pink/10 text-apc-pink' : 'bg-slate-100 text-slate-500'
-                }`}>
-                  {m.role.includes('Lider') || m.role === UserRole.Correccion ? 'LÍDER' : m.role === UserRole.QA_Opera ? 'QA' : 'OP'}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Carga: {load} ODTs Activas</p>
-              <div className="w-full bg-slate-200/50 h-2 rounded-full mt-3 overflow-hidden border border-slate-100">
-                <div 
-                  className={`h-full transition-all duration-500 ${load > 5 ? 'bg-apc-pink' : load > 3 ? 'bg-amber-500' : 'bg-apc-green'}`} 
-                  style={{width: `${Math.min((load/8)*100, 100)}%`}}
-                ></div>
-              </div>
+      {/* Tarjetas de Carga del Equipo o Control QA */}
+      {activeArea === 'QA' ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+              <svg className="w-4 h-4 text-apc-pink" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              Métricas de Rendimiento QA
+            </h2>
+            <div className="flex bg-slate-100 p-1 rounded-lg">
+              {(['day', 'week', 'month', 'year', 'all'] as const).map(range => (
+                <button
+                  key={range}
+                  onClick={() => setQaTimeRange(range)}
+                  className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-md transition-all ${qaTimeRange === range ? 'bg-white shadow text-apc-pink' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  {range === 'day' ? 'Día' : range === 'week' ? 'Semana' : range === 'month' ? 'Mes' : range === 'year' ? 'Año' : 'Todo'}
+                </button>
+              ))}
             </div>
-          );
-        })}
-      </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {teamMembers.map(m => {
+              const load = projects.filter(p => p.asignaciones?.some(a => a.usuarioIds?.includes(m.id) || a.usuarioId === m.id) && p.status !== 'Finalizado').length;
+              const isMe = m.id === user?.id;
+              const metrics = getQAMetrics(m.id);
+              
+              return (
+                <div key={m.id} className={`p-4 rounded-3xl border transition-all shadow-sm bg-white ${isMe ? 'border-apc-green/20' : 'border-slate-100'}`}>
+                  <div className="flex justify-between items-start mb-3 pb-3 border-b border-slate-50">
+                    <div>
+                      <p className={`text-xs font-black pr-2 ${isMe ? 'text-apc-green' : 'text-slate-800'}`}>
+                        {isMe ? 'Mi Rendimiento' : m.name}
+                      </p>
+                      <span className={`text-[8px] font-black uppercase ${
+                        m.role.includes('Lider') || m.role === UserRole.Correccion ? 'text-apc-green' : 'text-slate-400'
+                      }`}>
+                        {m.role.includes('Lider') || m.role === UserRole.Correccion ? 'LÍDER' : 'OPERATIVO'}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-black text-slate-800">{load}</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">En Progreso</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">{metrics.totalCalificadas}</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Calificadas</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">{metrics.avgTime}</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Hrs Promedio</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-col items-center justify-center bg-emerald-50/50 rounded-lg p-2 border border-emerald-100/50">
+                      <svg className="w-3 h-3 text-emerald-500 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                      <p className="text-xs font-black text-emerald-700">{metrics.approved}</p>
+                      <p className="text-[7px] text-emerald-600/70 font-black uppercase tracking-widest">Aprobadas</p>
+                    </div>
+                    <div className="flex flex-col items-center justify-center bg-rose-50/50 rounded-lg p-2 border border-rose-100/50">
+                      <svg className="w-3 h-3 text-rose-500 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                      <p className="text-xs font-black text-rose-700">{metrics.rejected}</p>
+                      <p className="text-[7px] text-rose-600/70 font-black uppercase tracking-widest">Rechazadas</p>
+                    </div>
+                    <div className="flex flex-col items-center justify-center bg-blue-50/50 rounded-lg p-2 border border-blue-100/50">
+                      <svg className="w-3 h-3 text-blue-500 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><polyline points="9 14 12 17 15 11"></polyline></svg>
+                      <p className="text-xs font-black text-blue-700">{metrics.checks}</p>
+                      <p className="text-[7px] text-blue-600/70 font-black uppercase tracking-widest">Check OK</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : activeArea !== 'QA' ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+              <svg className="w-4 h-4 text-apc-green" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+              Métricas de Rendimiento {activeArea}
+            </h2>
+            <div className="flex bg-slate-100 p-1 rounded-lg">
+              {(['day', 'week', 'month', 'year', 'all'] as const).map(range => (
+                <button
+                  key={range}
+                  onClick={() => setQaTimeRange(range)}
+                  className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-md transition-all ${qaTimeRange === range ? 'bg-white shadow text-apc-green' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  {range === 'day' ? 'Día' : range === 'week' ? 'Semana' : range === 'month' ? 'Mes' : range === 'year' ? 'Año' : 'Todo'}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {teamMembers.map(m => {
+              const load = projects.filter(p => p.asignaciones?.some(a => a.usuarioIds?.includes(m.id) || a.usuarioId === m.id) && p.status !== 'Finalizado').length;
+              const isMe = m.id === user?.id;
+              const metrics = getOperativeAreaMetrics(m.id, activeArea);
+              
+              return (
+                <div key={m.id} className={`p-4 rounded-3xl border transition-all shadow-sm bg-white ${isMe ? 'border-apc-green/20' : 'border-slate-100'}`}>
+                  <div className="flex justify-between items-start mb-3 pb-3 border-b border-slate-50">
+                    <div>
+                      <p className={`text-xs font-black pr-2 ${isMe ? 'text-apc-green' : 'text-slate-800'}`}>
+                        {isMe ? 'Mi Rendimiento' : m.name}
+                      </p>
+                      <span className={`text-[8px] font-black uppercase ${
+                        m.role.includes('Lider') ? 'text-apc-green' : 'text-slate-400'
+                      }`}>
+                        {m.role.includes('Lider') ? 'LÍDER' : 'OPERATIVO'}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xl font-black text-slate-800">{load}</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">En Progreso (Activas)</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">{metrics.completed}</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Ya Trabajaron</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">{metrics.avgTime}</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Hrs Promedio (General)</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-col items-center justify-center bg-emerald-50/50 rounded-lg p-2 border border-emerald-100/50">
+                      <svg className="w-3 h-3 text-emerald-500 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                      <p className="text-xs font-black text-emerald-700">{metrics.onTime}</p>
+                      <p className="text-[7px] text-emerald-600/70 font-black uppercase tracking-widest text-center">Entregas a Tiempo</p>
+                    </div>
+                    <div className="flex flex-col items-center justify-center bg-amber-50/50 rounded-lg p-2 border border-amber-100/50">
+                      <svg className="w-3 h-3 text-amber-500 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                      <p className="text-xs font-black text-amber-700">{metrics.late}</p>
+                      <p className="text-[7px] text-amber-600/70 font-black uppercase tracking-widest text-center">Entregas a Destiempo</p>
+                    </div>
+                    <div className="flex flex-col items-center justify-center bg-rose-50/50 rounded-lg p-2 border border-rose-100/50">
+                      <svg className="w-3 h-3 text-rose-500 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                      <p className="text-xs font-black text-rose-700">{metrics.qARejections}</p>
+                      <p className="text-[7px] text-rose-600/70 font-black uppercase tracking-widest text-center">Rechazos de QA</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {teamMembers.map(m => {
+            const load = projects.filter(p => p.asignaciones?.some(a => a.usuarioIds?.includes(m.id) || a.usuarioId === m.id) && p.status !== 'Finalizado').length;
+            const isMe = m.id === user?.id;
+            
+            return (
+              <div key={m.id} className={`p-5 rounded-2xl border transition-all shadow-sm hover:shadow-md ${isMe ? 'bg-apc-green/5 border-apc-green/20' : 'bg-white border-slate-100'}`}>
+                <div className="flex justify-between items-start mb-3">
+                  <p className={`text-xs font-black truncate pr-2 ${isMe ? 'text-apc-green' : 'text-slate-800'}`}>
+                    {isMe ? 'Mi Carga (Líder)' : m.name}
+                  </p>
+                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                    m.role.includes('Lider') || m.role === UserRole.Correccion ? 'bg-apc-green text-white' :
+                    m.role === UserRole.QA_Opera ? 'bg-apc-pink/10 text-apc-pink' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {m.role.includes('Lider') || m.role === UserRole.Correccion ? 'LÍDER' : m.role === UserRole.QA_Opera ? 'QA' : 'OP'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Carga: {load} ODTs Activas</p>
+                <div className="w-full bg-slate-200/50 h-2 rounded-full mt-3 overflow-hidden border border-slate-100">
+                  <div 
+                    className={`h-full transition-all duration-500 ${load > 5 ? 'bg-apc-pink' : load > 3 ? 'bg-amber-500' : 'bg-apc-green'}`} 
+                    style={{width: `${Math.min((load/8)*100, 100)}%`}}
+                  ></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Tabla de Gestión de ODTs */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">

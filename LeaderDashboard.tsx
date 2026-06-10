@@ -3,7 +3,7 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useODT } from './ODTContext';
 import { UserRole, Project, User, ProjectAssignment } from './types';
-import { normalizeString } from './workflowConfig';
+import { normalizeString, OPERATIVE_AREAS } from './workflowConfig';
 import { generateAreaReport, downloadCSV, calculateWorkingTime } from './reportUtils';
 
 interface LeaderDashboardProps {
@@ -251,8 +251,8 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
         completed++;
 
         if (deadlineStr) {
-           const deadline = new Date(deadlineStr);
-           deadline.setHours(23, 59, 59, 999);
+           const deadlineDateStr = deadlineStr.includes('T') ? deadlineStr.split('T')[0] : deadlineStr;
+           const deadline = new Date(`${deadlineDateStr}T23:59:59`);
            if (actionTime <= deadline) {
              onTime++;
            } else {
@@ -296,12 +296,19 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
 
   const availableAreas = useMemo(() => {
     if (!user) return [];
+    if (user.role === UserRole.Admin) return [...OPERATIVE_AREAS, 'QA'];
     if (user.role === UserRole.Medico_Lider) return ['Médico', 'QA'];
     if (user.department === 'QA' || user.role === UserRole.Correccion) return ['QA'];
     return [user.department];
   }, [user]);
 
   const [activeArea, setActiveArea] = useState(availableAreas[0] || '');
+
+  useEffect(() => {
+    if (availableAreas.length > 0 && !availableAreas.includes(activeArea)) {
+      setActiveArea(availableAreas[0]);
+    }
+  }, [availableAreas, activeArea]);
 
   const teamMembers = useMemo(() => {
     if (!user || !users) return [];
@@ -609,6 +616,7 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
       )}
 
       {/* Tabla de Gestión de ODTs */}
+      {user?.role !== UserRole.Admin && (
       <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-400 uppercase text-[10px] font-black tracking-widest">
@@ -683,6 +691,7 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 };

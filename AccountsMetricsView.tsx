@@ -48,20 +48,28 @@ export const AccountsMetricsView: React.FC = () => {
                       filteredClientsForExecutive.find(c => c.id === selectedClientId)?.name || 'Marca específica';
 
     // Preparar un subset de proyectos acotado para el análisis operativo sin saturar tokens
-    const simplifiedProjectsForAI = filteredProjects.map(p => ({
-      id: p.id,
-      client: p.empresa,
-      brand: p.marca,
-      product: p.producto,
-      created: p.createdAt ? p.createdAt.split('T')[0] : '',
-      due: p.fecha_entrega || 'S/F',
-      status: p.status,
-      type: p.tipoCargo === 'extra' ? 'Extra' : 'Iguala',
-      monto: p.monto_proyectado || 0,
-      sla_intento: p.fecha_entrega && p.client_standby_periods?.[0]?.start 
-        ? (p.client_standby_periods[0].start.split('T')[0] <= p.fecha_entrega ? 'A Tiempo' : 'Tarde') 
-        : 'Sin entrega'
-    }));
+    const simplifiedProjectsForAI = filteredProjects.map(p => {
+      let slaStatusForAI = 'Sin entrega';
+      if (p.fecha_entrega && p.client_standby_periods?.[0]?.start) {
+        const actionTime = new Date(p.client_standby_periods[0].start);
+        const deadlineDateStr = p.fecha_entrega.includes('T') ? p.fecha_entrega.split('T')[0] : p.fecha_entrega;
+        const deadline = new Date(`${deadlineDateStr}T23:59:59`);
+        slaStatusForAI = actionTime <= deadline ? 'A Tiempo' : 'Tarde';
+      }
+
+      return {
+        id: p.id,
+        client: p.empresa,
+        brand: p.marca,
+        product: p.producto,
+        created: p.createdAt ? p.createdAt.split('T')[0] : '',
+        due: p.fecha_entrega || 'S/F',
+        status: p.status,
+        type: p.tipoCargo === 'extra' ? 'Extra' : 'Iguala',
+        monto: p.monto_proyectado || 0,
+        sla_intento: slaStatusForAI
+      };
+    });
 
     try {
       const response = await analyzeExecutivePerformance({
@@ -520,8 +528,10 @@ export const AccountsMetricsView: React.FC = () => {
       }
 
       if (firstDeliveryStr && p.fecha_entrega) {
-        const firstDeliveryDate = new Date(firstDeliveryStr).toISOString().split('T')[0];
-        if (firstDeliveryDate <= p.fecha_entrega) {
+        const actionTime = new Date(firstDeliveryStr);
+        const deadlineDateStr = p.fecha_entrega.includes('T') ? p.fecha_entrega.split('T')[0] : p.fecha_entrega;
+        const deadline = new Date(`${deadlineDateStr}T23:59:59`);
+        if (actionTime <= deadline) {
           entregasATiempoCount++;
         } else {
           entregasTardeCount++;
@@ -596,8 +606,10 @@ export const AccountsMetricsView: React.FC = () => {
         }
       }
       if (firstDeliveryStr && p.fecha_entrega) {
-        const firstDeliveryDate = new Date(firstDeliveryStr).toISOString().split('T')[0];
-        slaStatus = firstDeliveryDate <= p.fecha_entrega ? 'Entregado a Tiempo' : 'Entregado Tarde';
+        const actionTime = new Date(firstDeliveryStr);
+        const deadlineDateStr = p.fecha_entrega.includes('T') ? p.fecha_entrega.split('T')[0] : p.fecha_entrega;
+        const deadline = new Date(`${deadlineDateStr}T23:59:59`);
+        slaStatus = actionTime <= deadline ? 'Entregado a Tiempo' : 'Entregado Tarde';
       }
 
       const row = [
@@ -780,8 +792,10 @@ export const AccountsMetricsView: React.FC = () => {
       }
 
       if (firstDeliveryStr && p.fecha_entrega) {
-        const firstDeliveryDate = new Date(firstDeliveryStr).toISOString().split('T')[0];
-        if (firstDeliveryDate <= p.fecha_entrega) {
+        const actionTime = new Date(firstDeliveryStr);
+        const deadlineDateStr = p.fecha_entrega.includes('T') ? p.fecha_entrega.split('T')[0] : p.fecha_entrega;
+        const deadline = new Date(`${deadlineDateStr}T23:59:59`);
+        if (actionTime <= deadline) {
           entregasATiempoCount++;
         } else {
           entregasTardeCount++;

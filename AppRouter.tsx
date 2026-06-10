@@ -304,7 +304,10 @@ export const AppRouter: React.FC<{
               {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Users />} label="Usuarios" active={isModuleActive('/users')} isCollapsed={isCollapsed} onClick={() => { navigate('/users'); setIsMobileMenuOpen(false); }} />}
               {user.role === UserRole.Admin && <SidebarItem icon={<Icons.Trash />} label="ODTs Eliminadas" active={isModuleActive('/deleted-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/deleted-projects'); setIsMobileMenuOpen(false); }} />}
               {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera || user.department === 'Administración' || user.department === 'Finanzas') && (
-                <SidebarItem icon={<Icons.TrendingUp />} label="Inteligencia" active={isModuleActive('/commercial-intelligence')} isCollapsed={isCollapsed} onClick={() => { navigate('/commercial-intelligence'); setIsMobileMenuOpen(false); }} />
+                <>
+                  <SidebarItem icon={<Icons.TrendingUp />} label="Inteligencia" active={isModuleActive('/commercial-intelligence')} isCollapsed={isCollapsed} onClick={() => { navigate('/commercial-intelligence'); setIsMobileMenuOpen(false); }} />
+                  <SidebarItem icon={<Icons.TrendingUp />} label="Métricas de cuentas" active={isModuleActive('/accounts-metrics')} isCollapsed={isCollapsed} onClick={() => { navigate('/accounts-metrics'); setIsMobileMenuOpen(false); }} />
+                </>
               )}
               {(user.role === UserRole.Admin || user.role === UserRole.Cuentas_Lider || user.department === 'Administración' || user.department === 'Finanzas') && (
                 <SidebarItem icon={<Icons.Ai />} label="Auditor Virtual" active={isModuleActive('/auditor')} isCollapsed={isCollapsed} onClick={() => { navigate('/auditor'); setIsMobileMenuOpen(false); }} />
@@ -363,6 +366,7 @@ export const AppRouter: React.FC<{
                 <Route path="/finances" element={renderView('finances')} />
                 <Route path="/users" element={renderView('users')} />
                 <Route path="/commercial-intelligence" element={renderView('commercial-intelligence')} />
+                <Route path="/accounts-metrics" element={renderView('accounts-metrics')} />
                 <Route path="/auditor" element={renderView('auditor')} />
                 <Route path="/medical-manual" element={renderView('medical-manual')} />
                 <Route path="/deleted-projects" element={renderView('deleted-projects')} />

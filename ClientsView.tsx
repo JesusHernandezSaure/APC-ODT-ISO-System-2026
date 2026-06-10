@@ -65,12 +65,36 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
   const canCreateClient = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera;
   const isLeader = user?.role === UserRole.Admin || user?.role === UserRole.Cuentas_Lider;
 
+  const [selectedExecutiveId, setSelectedExecutiveId] = useState<string>('all');
+
+  const executiveFolderCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!clients) return counts;
+    clients.forEach(c => {
+      c.assignedExecutives?.forEach(execId => {
+        counts[execId] = (counts[execId] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [clients]);
+
+  const unassignedCount = useMemo(() => {
+    if (!clients) return 0;
+    return clients.filter(c => !c.assignedExecutives || c.assignedExecutives.length === 0).length;
+  }, [clients]);
+
   const filteredClients = useMemo(() => {
     if (!clients || !user) return [];
     let base = clients;
     // Los ejecutivos operativos del área de cuentas (Cuentas_Opera) solo ven sus carpetas asignadas
     if (user.role === UserRole.Cuentas_Opera) {
       base = clients.filter(c => c.assignedExecutives?.includes(user.id));
+    } else if (isLeader && selectedExecutiveId !== 'all') {
+      if (selectedExecutiveId === 'unassigned') {
+        base = clients.filter(c => !c.assignedExecutives || c.assignedExecutives.length === 0);
+      } else {
+        base = clients.filter(c => c.assignedExecutives?.includes(selectedExecutiveId));
+      }
     }
     
     if (searchTerm) {
@@ -78,7 +102,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
     }
     
     return base;
-  }, [clients, user, searchTerm]);
+  }, [clients, user, searchTerm, isLeader, selectedExecutiveId]);
 
   const accountsUsers = useMemo(() => 
     (users || []).filter(u => {
@@ -337,21 +361,112 @@ const ClientsView: React.FC<ClientsViewProps> = ({ onViewProject }) => {
         </div>
       </header>
 
+      {/* Pestañas por Ejecutivo (Solo para Líder / Admin) */}
+      {isLeader && accountsUsers.length > 0 && (
+        <div className="flex flex-col gap-3 p-1 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <UsersIcon className="w-4 h-4 text-slate-400" />
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtrar por Ejecutivo de Cuentas:</h2>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            {/* Botón de Todos */}
+            <button
+              onClick={() => setSelectedExecutiveId('all')}
+              className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm ${
+                selectedExecutiveId === 'all'
+                  ? 'bg-slate-900 text-white shadow-slate-900/10'
+                  : 'bg-white hover:bg-slate-50 text-slate-600 border border-slate-200/60'
+              }`}
+            >
+              <span>TODOS</span>
+              <span className={`px-2 py-0.5 rounded-full text-[9px] ${
+                selectedExecutiveId === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {clients?.length || 0}
+              </span>
+            </button>
+
+            {/* Un botón por ejecutivo */}
+            {accountsUsers.map(exec => {
+              const count = executiveFolderCounts[exec.id] || 0;
+              const isSelected = selectedExecutiveId === exec.id;
+              return (
+                <button
+                  key={exec.id}
+                  onClick={() => setSelectedExecutiveId(exec.id)}
+                  className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm ${
+                    isSelected
+                      ? 'bg-apc-pink text-white shadow-md shadow-apc-pink/20'
+                      : 'bg-white hover:bg-slate-50 text-slate-600 border border-slate-200/60'
+                  }`}
+                >
+                  <span>{exec.name}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* Botón para Sin Asignar (si hay alguno) */}
+            {unassignedCount > 0 && (
+              <button
+                onClick={() => setSelectedExecutiveId('unassigned')}
+                className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm ${
+                  selectedExecutiveId === 'unassigned'
+                    ? 'bg-amber-500 text-white shadow-md shadow-amber-200'
+                    : 'bg-white hover:bg-slate-50 text-slate-600 border border-slate-200/60'
+                }`}
+              >
+                <span>SIN ASIGNAR</span>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] ${
+                  selectedExecutiveId === 'unassigned' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {unassignedCount}
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Panel de ODTs / Carpetas de Clientes */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {filteredClients.length === 0 ? (
-          <div className="col-span-full bg-white p-12 rounded-3xl border border-dashed border-slate-200 text-center">
+          <div className="col-span-full bg-white p-12 rounded-3xl border border-dashed border-slate-200 text-center animate-fadeIn">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
               <Folder />
             </div>
-            <h3 className="text-lg font-black text-slate-900 mb-1">No hay carpetas de clientes</h3>
-            <p className="text-slate-500 text-sm mb-6">Comienza creando la primera carpeta maestra para organizar las ODTs.</p>
-            {canCreateClient && (
-              <button 
-                onClick={() => setIsCreatingClient(true)}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all"
-              >
-                <Plus /> CREAR MI PRIMERA CARPETA
-              </button>
+            {clients?.length === 0 ? (
+              <>
+                <h3 className="text-lg font-black text-slate-900 mb-1">No hay carpetas de clientes</h3>
+                <p className="text-slate-500 text-sm mb-6">Comienza creando la primera carpeta maestra para organizar las ODTs.</p>
+                {canCreateClient && (
+                  <button 
+                    onClick={() => setIsCreatingClient(true)}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-apc-green text-white font-black text-xs rounded-xl hover:bg-apc-green/80 transition-all"
+                  >
+                    <Plus /> CREAR MI PRIMERA CARPETA
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-black text-slate-900 mb-1">No se encontraron carpetas</h3>
+                <p className="text-slate-500 text-sm mb-6">Prueba seleccionando otro ejecutivo o buscando otro nombre de cliente o marca.</p>
+                <button 
+                  onClick={() => {
+                    setSelectedExecutiveId('all');
+                    updateSearchParam('search', '');
+                  }}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white font-black text-xs rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10"
+                >
+                  VER TODAS LAS CARPETAS
+                </button>
+              </>
             )}
           </div>
         ) : (

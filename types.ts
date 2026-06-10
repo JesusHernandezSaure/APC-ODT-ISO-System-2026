@@ -187,6 +187,7 @@ export type ViewState =
   | 'commercial-intelligence'
   | 'medical-manual'
   | 'deleted-projects'
+  | 'accounts-metrics'
   | 'agency-hub';
 
 export interface LoginResult {

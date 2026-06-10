@@ -12,6 +12,7 @@ import ClientsView from './ClientsView';
 import UsersView from './UsersView';
 import VirtualAuditor from './VirtualAuditor';
 import CommercialIntelligence from './CommercialIntelligence';
+import { AccountsMetricsView } from './AccountsMetricsView';
 import MedicalUserManual from './MedicalUserManual';
 import AgencyHubView from './AgencyHubView';
 import AgencyHubODTDetail from './AgencyHubODTDetail';
@@ -191,6 +192,7 @@ const AppContent: React.FC = () => {
       case 'users': return <UsersView />;
       case 'auditor': return <VirtualAuditor />;
       case 'commercial-intelligence': return <CommercialIntelligence />;
+      case 'accounts-metrics': return <AccountsMetricsView onViewProject={onViewProject} />;
       case 'medical-manual': return <MedicalUserManual />;
       case 'deleted-projects': return <DeletedProjectsView onViewProject={onViewProject} />;
       default: return <AdminDashboard />;

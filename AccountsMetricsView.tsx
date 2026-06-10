@@ -1,15 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useODT } from './ODTContext';
 import { UserRole, User } from './types';
 import { Icons } from './constants';
+import Markdown from 'react-markdown';
+import { analyzeExecutivePerformance } from './services/geminiService';
 
-interface AccountsMetricsViewProps {
-  onViewProject?: (id: string) => void;
-}
-
-export const AccountsMetricsView: React.FC<AccountsMetricsViewProps> = ({ onViewProject }) => {
+export const AccountsMetricsView: React.FC = () => {
   const { projects, clients, users } = useODT();
-  const { Folder, Search, Project: ProjectIcon } = Icons;
+  const { Folder, Search } = Icons;
 
   const [selectedExecutiveId, setSelectedExecutiveId] = useState<string>('all');
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('month');
@@ -21,6 +19,386 @@ export const AccountsMetricsView: React.FC<AccountsMetricsViewProps> = ({ onView
   const [downloadRange, setDownloadRange] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('month');
   const [downloadExecId, setDownloadExecId] = useState<string>('all');
   const [downloadClientId, setDownloadClientId] = useState<string>('all');
+
+  // Estados para el Análisis IA
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiReportText, setAiReportText] = useState<string>('');
+
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if ((isAnalyzing || aiReportText) && reportRef.current) {
+      reportRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [isAnalyzing, aiReportText]);
+
+  const handleRunAIAnalysis = async () => {
+    setIsAnalyzing(true);
+    
+    const execName = selectedExecutiveId === 'all' ? 'Toda la Agencia' :
+                     selectedExecutiveId === 'unassigned' ? 'Sin Asignar' :
+                     accountsUsers.find(u => u.id === selectedExecutiveId)?.name || 'Cuentas';
+
+    const rangeName = timeRange === 'day' ? 'Hoy' :
+                      timeRange === 'week' ? 'Última Semana' :
+                      timeRange === 'month' ? 'Último Mes' :
+                      timeRange === 'year' ? 'Último Año' : 'Todo el Tiempo';
+
+    const brandName = selectedClientId === 'all' ? 'Todas las marcas' :
+                      filteredClientsForExecutive.find(c => c.id === selectedClientId)?.name || 'Marca específica';
+
+    // Preparar un subset de proyectos acotado para el análisis operativo sin saturar tokens
+    const simplifiedProjectsForAI = filteredProjects.map(p => ({
+      id: p.id,
+      client: p.empresa,
+      brand: p.marca,
+      product: p.producto,
+      created: p.createdAt ? p.createdAt.split('T')[0] : '',
+      due: p.fecha_entrega || 'S/F',
+      status: p.status,
+      type: p.tipoCargo === 'extra' ? 'Extra' : 'Iguala',
+      monto: p.monto_proyectado || 0,
+      sla_intento: p.fecha_entrega && p.client_standby_periods?.[0]?.start 
+        ? (p.client_standby_periods[0].start.split('T')[0] <= p.fecha_entrega ? 'A Tiempo' : 'Tarde') 
+        : 'Sin entrega'
+    }));
+
+    try {
+      const response = await analyzeExecutivePerformance({
+        executiveName: execName,
+        timeRange: rangeName,
+        brandName: brandName,
+        metrics: {
+          totalIgualasVal: accountsMetrics.totalIgualasVal,
+          totalExtrasVal: accountsMetrics.totalExtrasVal,
+          totalCreatedCount: accountsMetrics.totalCreatedCount,
+          activeODTsCount: accountsMetrics.activeODTsCount,
+          enRevisionCount: accountsMetrics.enRevisionCount,
+          enTiempoCount: accountsMetrics.enTiempoCount,
+          conRetrasoCount: accountsMetrics.conRetrasoCount,
+          entregasATiempoCount: accountsMetrics.entregasATiempoCount,
+          entregasTardeCount: accountsMetrics.entregasTardeCount,
+        },
+        projects: simplifiedProjectsForAI.slice(0, 40) // Tomamos un tope generoso para el prompt
+      });
+      
+      if (response) {
+        setAiReportText(response);
+      }
+    } catch (error) {
+      console.error('Error generating AI Performance report:', error);
+      alert('Hubo un error al generar el análisis con IA. Por favor, verifica tu conexión o API key.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    const execName = selectedExecutiveId === 'all' ? 'Toda la Agencia' :
+                     selectedExecutiveId === 'unassigned' ? 'Sin Asignar' :
+                     accountsUsers.find(u => u.id === selectedExecutiveId)?.name || 'Cuentas';
+
+    const rangeName = timeRange === 'day' ? 'Hoy' :
+                      timeRange === 'week' ? 'Última Semana' :
+                      timeRange === 'month' ? 'Último Mes' :
+                      timeRange === 'year' ? 'Último Año' : 'Todo el Tiempo';
+
+    const brandName = selectedClientId === 'all' ? 'Todas las marcas' :
+                      filteredClientsForExecutive.find(c => c.id === selectedClientId)?.name || 'Marca específica';
+
+    const parseMarkdownToHtml = (markdown: string): string => {
+      let html = markdown;
+      
+      // Headings
+      html = html.replace(/^### (.*$)/gim, '<h3 style="font-family: Inter, sans-serif; font-size: 13px; font-weight: 800; color: #1e293b; text-transform: uppercase; margin-top: 20px; margin-bottom: 8px; border-left: 4px solid #4f46e5; padding-left: 10px; background-color: #f8fafc; padding-top: 6px; padding-bottom: 6px; border-radius: 4px; page-break-after: avoid;">$1</h3>');
+      html = html.replace(/^## (.*$)/gim, '<h2 style="font-family: Inter, sans-serif; font-size: 15px; font-weight: 800; color: #312e81; text-transform: uppercase; margin-top: 24px; margin-bottom: 8px; page-break-after: avoid;">$1</h2>');
+      html = html.replace(/^# (.*$)/gim, '<h1 style="font-family: Inter, sans-serif; font-size: 17px; font-weight: 900; color: #111827; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 28px; margin-bottom: 12px; text-transform: uppercase; page-break-after: avoid;">$1</h1>');
+
+      // Bold Text
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: 700; color: #0f172a;">$1</strong>');
+
+      // Blockquotes
+      html = html.replace(/^> (.*$)/gim, '<blockquote style="border-left: 4px solid #f59e0b; background-color: #fffbeb; padding: 10px 14px; margin: 12px 0; border-radius: 0 8px 8px 0; font-style: italic; color: #4b5563; font-size: 11px;">$1</blockquote>');
+
+      // List Elements
+      html = html.replace(/^\s*[-*]\s+(.*$)/gim, '<li style="margin-bottom: 4px; font-size: 11px; font-weight: 500; color: #374151;">$1</li>');
+      html = html.replace(/^\s*\d+\.\s+(.*$)/gim, '<li style="margin-bottom: 4px; font-size: 11px; font-weight: 500; color: #374151; list-style-type: decimal;">$1</li>');
+
+      // Horizon Splitters
+      html = html.replace(/^---/gm, '<hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;">');
+
+      const lines = html.split('\n');
+      const formattedLines = lines.map(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('<h') || trimmed.startsWith('<li') || trimmed.startsWith('<block') || trimmed.startsWith('<hr') || trimmed.startsWith('<ul') || trimmed.startsWith('<ol')) {
+          return line;
+        }
+        return `<p style="font-family: Inter, sans-serif; font-size: 11px; color: #374151; line-height: 1.6; margin-bottom: 10px; font-weight: 500; text-align: justify;">${line}</p>`;
+      });
+
+      html = formattedLines.join('\n');
+      
+      // Group contiguous list tags
+      html = html.replace(/(<li.*?>.*?<\/li>)+/g, '<ul style="padding-left: 20px; list-style-type: disc; margin-bottom: 12px;">$&</ul>');
+
+      return html;
+    };
+
+    const renderedReportHtml = parseMarkdownToHtml(aiReportText);
+
+    const docSetupHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Reporte de Rendimiento - ${execName}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+        <style>
+          @page {
+            size: letter;
+            margin: 18mm 18mm 18mm 18mm;
+          }
+          body {
+            font-family: 'Inter', sans-serif;
+            color: #334155;
+            line-height: 1.6;
+            background-color: #ffffff;
+            margin: 0;
+            padding: 0;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .header {
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          }
+          .title-area h4 {
+            margin: 0;
+            font-weight: 800;
+            font-size: 10px;
+            color: #4f46e5;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+          }
+          .title-area h2 {
+            margin: 4px 0 0 0;
+            font-weight: 900;
+            font-size: 18px;
+            color: #0f172a;
+            text-transform: uppercase;
+          }
+          .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+          }
+          .meta-card {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 10px 14px;
+            border-radius: 8px;
+          }
+          .meta-title {
+            font-size: 8px;
+            font-weight: 800;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0;
+          }
+          .meta-value {
+            font-size: 11px;
+            font-weight: 700;
+            color: #1e293b;
+            margin: 2px 0 0 0;
+            text-transform: uppercase;
+          }
+          .metrics-box {
+            background: linear-gradient(135deg, #f1f5f9 0%, #f8fafc 100%);
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+          }
+          .metrics-box-title {
+            font-size: 10px;
+            font-weight: 900;
+            color: #0f172a;
+            margin-top: 0;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 6px;
+          }
+          .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+          }
+          .metric-item {
+            display: flex;
+            flex-direction: column;
+          }
+          .metric-label {
+            font-size: 9px;
+            font-weight: 600;
+            color: #64748b;
+          }
+          .metric-val {
+            font-size: 13px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-top: 2px;
+          }
+          .report-content {
+            font-size: 11px;
+          }
+          .footer-watermark {
+            margin-top: 30px;
+            border-top: 1px solid #f1f5f9;
+            padding-top: 8px;
+            font-size: 8px;
+            color: #94a3b8;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          h1, h2, h3, h4, blockquote, .meta-card, .metrics-box {
+            page-break-inside: avoid;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="title-area">
+            <h4>Sistema ISO 9001:2015 – Control de Gestión</h4>
+            <h2>ANÁLISIS DIRECTIVO DE RENDIMIENTO</h2>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 8px; font-weight: bold; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Fecha Impresión</div>
+            <div style="font-size: 11px; font-weight: bold; color: #334155;">${new Date().toLocaleDateString('es-MX')}</div>
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-card">
+            <p class="meta-title">Ejecutivo de Cuentas</p>
+            <p class="meta-value">${execName}</p>
+          </div>
+          <div class="meta-card">
+            <p class="meta-title">Rango de Evaluación</p>
+            <p class="meta-value">${rangeName}</p>
+          </div>
+          <div class="meta-card">
+            <p class="meta-title">Marcas Seleccionadas</p>
+            <p class="meta-value" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${brandName}</p>
+          </div>
+        </div>
+
+        <div class="metrics-box">
+          <div class="metrics-box-title">Métricas Clave del Periodo</div>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <span class="metric-label">Valor de Igualas</span>
+              <span class="metric-val">$ ${accountsMetrics.totalIgualasVal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Valor Extra s/Iguala</span>
+              <span class="metric-val">$ ${accountsMetrics.totalExtrasVal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">ODTs Creadas</span>
+              <span class="metric-val">${accountsMetrics.totalCreatedCount} asignadas</span>
+            </div>
+            <div class="metric-item" style="margin-top: 10px;">
+              <span class="metric-label">ODTs Activas</span>
+              <span class="metric-val">${accountsMetrics.activeODTsCount} activas</span>
+            </div>
+            <div class="metric-item" style="margin-top: 10px;">
+              <span class="metric-label">En Tiempo vs SLA</span>
+              <span class="metric-val">${accountsMetrics.enTiempoCount} en tiempo</span>
+            </div>
+            <div class="metric-item" style="margin-top: 10px;">
+              <span class="metric-label">Cumplimiento SLA (Primer Envío)</span>
+              <span class="metric-val">
+                ${accountsMetrics.entregasATiempoCount + accountsMetrics.entregasTardeCount > 0 
+                  ? `${Math.round((accountsMetrics.entregasATiempoCount / (accountsMetrics.entregasATiempoCount + accountsMetrics.entregasTardeCount)) * 100)}%`
+                  : '100%'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="report-content">
+          ${renderedReportHtml}
+        </div>
+
+        <div class="footer-watermark">
+          Generado dinámicamente mediante auditoría asistida por IA inteligente bajo el estándar de calidad ISO 9001:2015.
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    // Usamos Blob y abrimos en una nueva pestaña (o descargamos si las ventanas están bloqueadas)
+    try {
+      const blob = new Blob([docSetupHtml], { type: 'text/html;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      // Intentamos abrir en una pestaña nueva
+      const newTab = window.open(url, '_blank');
+      
+      if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+        // Bloqueo de ventanas emergentes (Pop-up blocker), activamos descarga manual
+        triggerDownloadFallback(docSetupHtml, execName);
+      }
+      
+      // Limpiamos el URL después de un tiempo razonable para que la nueva pestaña lo cargue
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      console.warn("Fallo general al crear PDF/HTML:", err);
+      triggerDownloadFallback(docSetupHtml, execName);
+    }
+  };
+
+  const triggerDownloadFallback = (htmlContent: string, execName: string) => {
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Clean and descriptive filename
+    const cleanName = execName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    link.download = `reporte_desempeno_${cleanName || 'ejecutivo'}.html`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+    
+    // Muestra una guía intuitiva de un solo paso
+    alert(
+      'Para garantizar la descarga debido a políticas de seguridad del navegador, se ha descargado un archivo interactivo listo para imprimir:\n\n' +
+      '📁 "reporte_desempeno_' + (cleanName || 'ejecutivo') + '.html"\n\n' +
+      '¡Solo dale doble click para abrirlo, y se desplegará el menú de Guardar como PDF automáticamente!'
+    );
+  };
 
   const openDownloadModal = () => {
     setDownloadRange(timeRange);
@@ -470,13 +848,38 @@ export const AccountsMetricsView: React.FC<AccountsMetricsViewProps> = ({ onView
           {/* Botón Descargar Reporte Excel */}
           <button
             onClick={openDownloadModal}
-            className="h-11 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-emerald-600/10 active:scale-95 duration-150"
+            className="h-11 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-emerald-600/10 active:scale-95 duration-150 cursor-pointer"
             title="Descargar Reporte Excel"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             Excel Reporte
+          </button>
+
+          {/* Botón de Análisis de IA */}
+          <button
+            onClick={handleRunAIAnalysis}
+            disabled={isAnalyzing}
+            className="h-11 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-indigo-600/10 active:scale-95 duration-150 cursor-pointer"
+            title="Generar Diagnóstico Operativo con IA"
+          >
+            {isAnalyzing ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Analizando...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                </svg>
+                Analizar con IA
+              </>
+            )}
           </button>
         </div>
       </header>
@@ -788,105 +1191,146 @@ export const AccountsMetricsView: React.FC<AccountsMetricsViewProps> = ({ onView
         </div>
       </div>
 
-      {/* DETALLE Y LISTADO DE ODTS FILTRADAS */}
-      <div className="bg-white rounded-3xl border border-slate-200/65 overflow-hidden shadow-sm">
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <ProjectIcon className="w-4 h-4 text-slate-400" />
-              ODTs de Cuenta en Rango de Tiempo ({filteredProjects.length})
-            </h3>
-            <p className="text-[10px] text-slate-450 font-bold uppercase mt-0.5">
-              Proyectos filtrados y bajo análisis actual
-            </p>
+      {/* SECCIÓN DE INLINE REPORT/ANALYSIS IA */}
+      {(isAnalyzing || aiReportText) && (
+        <div ref={reportRef} className="mt-6 bg-white rounded-3xl border border-slate-200/60 shadow-md overflow-hidden animate-fadeIn">
+          {/* Cabecera de la Sección */}
+          <div className="p-6 bg-slate-50/80 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center shadow-sm">
+                <svg className="w-5.5 h-5.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.364l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-850 uppercase tracking-wider">
+                  Análisis Directivo IA & Plan de Acción
+                </h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                  Auditoría inteligente del ejecutivo seleccionado bajo el estándar de calidad ISO 9001:2015
+                </p>
+              </div>
+            </div>
+            
+            {/* Acciones si ya está el reporte listo */}
+            {!isAnalyzing && aiReportText && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  onClick={handleDownloadPDF}
+                  className="px-4 h-10 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 active:scale-95 duration-150 cursor-pointer shadow-sm"
+                  title="Descargar Reporte en PDF Listo para Imprimir"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  PDF Reporte
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(aiReportText);
+                    alert('¡Reporte copiado al portapapeles con éxito!');
+                  }}
+                  className="px-4 h-10 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/30 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 active:scale-95 duration-150 cursor-pointer"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                  </svg>
+                  Copiar Texto
+                </button>
+                <button
+                  onClick={() => setAiReportText('')}
+                  className="px-3.5 h-10 bg-white hover:bg-slate-100 border border-slate-200 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                  title="Cerrar Reporte"
+                >
+                  Cerrar
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Contenido principal */}
+          <div className="p-8">
+            {isAnalyzing ? (
+              <div className="py-20 flex flex-col items-center justify-center gap-4 text-center">
+                <div className="relative">
+                  <div className="w-14 h-14 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
+                  <div className="w-14 h-14 rounded-full border border-dashed border-indigo-200 absolute inset-0 animate-pulse"></div>
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider leading-none">
+                    Generando Diagnóstico Operativo con IA...
+                  </h4>
+                  <p className="text-[10px] text-slate-450 font-bold uppercase tracking-widest mt-2 max-w-sm mx-auto leading-relaxed">
+                    Evaluando entregas históricas, porcentajes de cumplimiento de SLA, valor operativo y plan de mitigación continuo de la ODT.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Contexto del Reporte en Inline */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-slate-100 pb-5">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/40">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ejecutivo de Cuentas</p>
+                    <p className="text-xs font-bold text-slate-800 mt-1 uppercase">
+                      {selectedExecutiveId === 'all' ? 'Toda la Agencia' :
+                       selectedExecutiveId === 'unassigned' ? 'Sin Asignar' :
+                       users.find(u => u.id === selectedExecutiveId)?.name || 'Cuentas'}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/40">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Periodo de Análisis</p>
+                    <p className="text-xs font-bold text-slate-800 mt-1 uppercase text-ellipsis overflow-hidden">
+                      {timeRange === 'day' ? 'Hoy' : timeRange === 'week' ? 'Última Semana' : timeRange === 'month' ? 'Último Mes' : timeRange === 'year' ? 'Último Año' : 'Todo el Tiempo'}
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/40">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Marcas Evaluadas</p>
+                    <p className="text-xs font-bold text-slate-800 mt-1 uppercase truncate">
+                      {selectedClientId === 'all' ? 'Todas las asignadas' :
+                       clients?.find(c => c.id === selectedClientId)?.name || 'Marca específica'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Contenido Markdown Renderizado */}
+                <div className="markdown-body prose max-w-none text-slate-700 leading-relaxed space-y-4">
+                  <Markdown
+                    components={{
+                      h1: ({ children }) => <h1 className="text-base font-black text-slate-900 border-b border-indigo-100 pb-2 mt-6 mb-3 flex items-center gap-2 uppercase tracking-wide">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-sm font-black text-indigo-900 mt-5 mb-2.5 uppercase tracking-wide">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mt-4 mb-2 bg-indigo-50/60 p-3 rounded-2xl border-l-[3.5px] border-indigo-600 flex items-center gap-2">{children}</h3>,
+                      p: ({ children }) => <p className="text-slate-600 text-[11px] leading-relaxed mb-3.5 font-medium">{children}</p>,
+                      ul: ({ children }) => <ul className="list-disc pl-5 mt-1 space-y-1.5 text-[11px] text-slate-600 mb-4">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal pl-5 mt-1 space-y-1.5 text-[11px] text-slate-600 mb-4">{children}</ol>,
+                      li: ({ children }) => <li className="text-slate-600 font-medium tracking-normal">{children}</li>,
+                      blockquote: ({ children }) => <blockquote className="border-l-[3.5px] border-amber-500 bg-amber-50/40 py-2.5 px-4 rounded-r-2xl italic text-slate-650 text-[11px] mb-4">{children}</blockquote>,
+                      table: ({ children }) => <div className="overflow-x-auto rounded-2xl border border-slate-200/60 my-4"><table className="min-w-full divide-y divide-slate-200">{children}</table></div>,
+                      thead: ({ children }) => <thead className="bg-slate-50">{children}</thead>,
+                      tbody: ({ children }) => <tbody className="bg-white divide-y divide-slate-200">{children}</tbody>,
+                      tr: ({ children }) => <tr>{children}</tr>,
+                      th: ({ children }) => <th className="px-3 py-2 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{children}</th>,
+                      td: ({ children }) => <td className="px-3 py-2 text-slate-600 text-[10px] font-medium whitespace-nowrap">{children}</td>,
+                    }}
+                  >
+                    {aiReportText}
+                  </Markdown>
+                </div>
+
+                {/* Pie Final de Recomendaciones */}
+                <div className="pt-5 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                    Recomendaciones dinámicas asistidas por Gemini
+                  </span>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                    Auditoría continua • ISO 9001:2015
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-
-        {filteredProjects.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300">
-              <Folder />
-            </div>
-            <h4 className="text-sm font-black text-slate-700">No se encontraron ODTs</h4>
-            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-              Prueba ensanchando el rango de tiempo o seleccionando otro ejecutivo/marca.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/75 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                  <th className="py-3 px-5">ID ODT</th>
-                  <th className="py-3 px-5">Cliente / Marca</th>
-                  <th className="py-3 px-5">Producto</th>
-                  <th className="py-3 px-5">Creado</th>
-                  <th className="py-3 px-5">Fecha Entrega</th>
-                  <th className="py-3 px-5">Estatus</th>
-                  <th className="py-3 px-5 text-right">Monto</th>
-                  <th className="py-3 px-5">Acción</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/80 text-xs font-bold text-slate-700">
-                {filteredProjects.map(p => {
-                  const isLate = p.fecha_entrega && p.fecha_entrega < new Date().toISOString().split('T')[0] && p.status !== 'Finalizado' && p.status !== 'Cancelado';
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-3 px-5 text-[11px] font-mono text-slate-500">
-                        {p.id}
-                      </td>
-                      <td className="py-3 px-5">
-                        <p className="font-extrabold text-slate-900">{p.empresa}</p>
-                        <p className="text-[10px] text-slate-400 uppercase font-medium">{p.marca}</p>
-                      </td>
-                      <td className="py-3 px-5 text-slate-600 font-medium">
-                        {p.producto}
-                      </td>
-                      <td className="py-3 px-5 text-slate-500 font-normal">
-                        {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td className="py-3 px-5">
-                        {p.fecha_entrega ? (
-                          <span className={`px-2 py-1 rounded-md text-[10px] ${
-                            isLate ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-600'
-                          }`}>
-                            {new Date(p.fecha_entrega).toLocaleDateString()}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 font-normal">S/Fecha</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-5">
-                        <span className={`px-2 py-1.5 rounded-full text-[9px] font-black uppercase ${
-                          p.status === 'Finalizado' ? 'bg-emerald-50 text-emerald-600' :
-                          p.status === 'En revisión con cliente' ? 'bg-purple-50 text-purple-600' :
-                          p.status === 'Cancelado' ? 'bg-rose-50 text-rose-600 font-normal' :
-                          'bg-indigo-50 text-indigo-600'
-                        }`}>
-                          {p.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-5 text-right font-black text-slate-900">
-                        ${p.monto_proyectado?.toLocaleString('es-MX', { minimumFractionDigits: 2 }) || '0.00'}
-                      </td>
-                      <td className="py-3 px-5">
-                        {onViewProject && (
-                          <button
-                            onClick={() => onViewProject(p.id)}
-                            className="p-1 px-2.5 bg-slate-900 text-white rounded-lg text-[9px] font-extrabold uppercase hover:bg-slate-800 transition-all shadow-sm"
-                          >
-                            Ver
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Modal de Opciones de Descarga */}
       {isDownloadModalOpen && (
@@ -1013,6 +1457,7 @@ export const AccountsMetricsView: React.FC<AccountsMetricsViewProps> = ({ onView
           </div>
         </div>
       )}
+
     </div>
   );
 };

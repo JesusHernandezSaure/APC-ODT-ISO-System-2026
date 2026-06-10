@@ -78,3 +78,84 @@ export async function structureBrief(htmlContent: string) {
 
   return response.text?.trim() || null;
 }
+
+/**
+ * Generates an executive performance and ROI analysis for a selected account executive (or team).
+ */
+export async function analyzeExecutivePerformance(data: {
+  executiveName: string;
+  timeRange: string;
+  brandName: string;
+  metrics: {
+    totalIgualasVal: number;
+    totalExtrasVal: number;
+    totalCreatedCount: number;
+    activeODTsCount: number;
+    enRevisionCount: number;
+    enTiempoCount: number;
+    conRetrasoCount: number;
+    entregasATiempoCount: number;
+    entregasTardeCount: number;
+  };
+  projects: {
+    id?: string;
+    client?: string;
+    brand?: string;
+    product?: string;
+    created?: string;
+    due?: string;
+    status?: string;
+    type?: string;
+    monto?: number;
+    sla_intento?: string;
+  }[];
+}) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  
+  const response = await ai.models.generateContent({
+    model: 'gemini-3.5-flash',
+    contents: `Por favor analiza la siguiente información de rendimiento y actividades:
+    - Ejecutivo seleccionado: ${data.executiveName}
+    - Período de tiempo: ${data.timeRange}
+    - Marcas incluidas: ${data.brandName}
+    - Métricas financieras y de control:
+      * Valor Operativo de Igualas: $ ${data.metrics.totalIgualasVal.toLocaleString('es-MX')} MXN
+      * Valor de Cargos Extra: $ ${data.metrics.totalExtrasVal.toLocaleString('es-MX')} MXN
+      * Total de ODTs creadas: ${data.metrics.totalCreatedCount}
+      * ODTs Activas de cuenta: ${data.metrics.activeODTsCount}
+      * ODTs en Revisión con cliente/Standby: ${data.metrics.enRevisionCount}
+      * ODTs Activas en tiempo: ${data.metrics.enTiempoCount}
+      * ODTs Activas con retraso: ${data.metrics.conRetrasoCount}
+      * Entregas del primer envío a tiempo (SLA): ${data.metrics.entregasATiempoCount}
+      * Entregas de primer envío tarde (SLA): ${data.metrics.entregasTardeCount}
+
+    - Desglose de proyectos y ODTs:
+    ${JSON.stringify(data.projects)}`,
+    config: {
+      systemInstruction: `Eres un Consultor Senior Experto en Operaciones de Agencias de Publicidad y Marketing, y Auditor bajo las normas ISO 9001:2015. 
+      Tu objetivo es analizar la información operativa proporcionada de un ejecutivo de cuentas (o de toda la agencia) y generar un reporte ejecutivo con un tono corporativo, riguroso, motivador y sumamente analítico de su desempeño general en el periodo especificado.
+
+      Tu análisis debe contener la siguiente estructura en formato Markdown:
+
+      ### 1. 📊 RESUMEN EJECUTIVO Y DIAGNÓSTICO OPERATIVO
+      Presenta una evaluación cuantitativa y cualitativa del rendimiento de la persona seleccionada (o de toda la agencia si se selecciona "Toda la Agencia"). Analiza la relación entre el volumen de ODTs generadas, las activas, el cumplimiento de fechas límite, y su éxito en primeras entregas en base a las métricas proporcionadas.
+
+      ### 2. 💰 ANÁLISIS ECONÓMICO Y ROI
+      Evalúa la carga financiera operativa. Analiza la proporción de Igualas fijas vs proyectos Extras y estima cómo esto afecta a la rentabilidad del ejecutivo. ¿Qué impacto tiene el retraso o la velocidad de entrega en el flujo de efectivo y el ROI de la agencia?
+
+      ### 3. 🚦 DETERMINACIÓN DE RIESGOS / CUELLOS DE BOTELLA OPERATIVOS
+      Identifica de manera detallada los factores críticos de riesgo (ej. alto monto de proyectos extras lentificados, excesivas ODTs en standby, retrasos acumulados en productos específicos, etc.). Haz mención de marcas o proyectos concretos de la lista que requieran atención inmediata.
+
+      ### 4. 🚀 PROPUESTAS DE MEJORA OPERATIVA (SLA & ROI)
+      Prescribe propuestas tácticas y estratégicas e hitos de acción para mejorar radicalmente:
+      - El flujo y la velocidad de entrega.
+      - Las entregas en tiempo al primer intento de cara al cliente (SLA).
+      - La eficiencia operativa para potenciar el ROI y reducir tiempos muertos.
+      Clasifica tus recomendaciones en "Acciones Inmediatas (Cuyo impacto será en <7 días)" y "Estrategias de Mediano Plazo".
+
+      Usa un español profesional impecable con terminología de agencias publicitarias y de negocios. No inventes métricas, adhiérete enteramente a los números y proyectos provistos, dando valor estratégico a los mismos.`,
+    }
+  });
+
+  return response.text?.trim() || 'No se pudo generar el análisis en este momento.';
+}

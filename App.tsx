@@ -192,7 +192,7 @@ const AppContent: React.FC = () => {
       case 'users': return <UsersView />;
       case 'auditor': return <VirtualAuditor />;
       case 'commercial-intelligence': return <CommercialIntelligence />;
-      case 'accounts-metrics': return <AccountsMetricsView onViewProject={onViewProject} />;
+      case 'accounts-metrics': return <AccountsMetricsView />;
       case 'medical-manual': return <MedicalUserManual />;
       case 'deleted-projects': return <DeletedProjectsView onViewProject={onViewProject} />;
       default: return <AdminDashboard />;

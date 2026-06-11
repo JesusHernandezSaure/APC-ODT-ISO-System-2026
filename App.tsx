@@ -812,7 +812,9 @@ const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProjec
   const qaProjects = useMemo(() => {
     let result = projects?.filter(p => {
       const currentE = (p.etapa_actual || p.etapaActual || '').toUpperCase();
-      const inQAStage = currentE.includes('REVISIÓN QA') || p.status === 'QA';
+      const isInGlobalQA = currentE.includes('REVISIÓN QA') || p.status === 'QA';
+      const hasCampaignQA = p.esCampana && p.estadoPorArea && Object.values(p.estadoPorArea).some(status => status === 'En QA');
+      const inQAStage = isInGlobalQA || hasCampaignQA;
       
       const isStandby = p.enStandby || p.status === 'En revisión con cliente' || currentE.includes('EN REVISIÓN CON CLIENTE');
       if (isStandby) return false;

@@ -202,6 +202,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     if (!user) return false;
     if (user.role === UserRole.Admin) return true;
     if (user.department === 'Cuentas' || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera) return true;
+    if (user.department === 'QA' || user.role === UserRole.Correccion || user.role === UserRole.QA_Opera) return true;
     if (project.areas_seleccionadas?.includes(user.department)) return true;
     return false;
   }, [user, project.areas_seleccionadas]);

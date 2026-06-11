@@ -355,7 +355,9 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     if (activeArea === 'QA') {
       filtered = projects.filter(p => {
         const stageStr = (p.etapa_actual || p.etapaActual || '').toUpperCase();
-        return stageStr.includes('REVISIÓN QA') || p.status === 'QA';
+        const isInGlobalQA = stageStr.includes('REVISIÓN QA') || p.status === 'QA';
+        const hasCampaignQA = p.esCampana && p.estadoPorArea && Object.values(p.estadoPorArea).some(status => status === 'En QA');
+        return isInGlobalQA || hasCampaignQA;
       });
     } else {
       filtered = projects.filter(p => 

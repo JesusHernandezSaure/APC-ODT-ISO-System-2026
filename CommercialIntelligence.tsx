@@ -73,12 +73,7 @@ const CommercialIntelligence: React.FC = () => {
     const odtsInQA = filteredProjects.filter(p => p.status?.includes('QA')).length;
     
     // Total Real Rework (Actual rejections from history)
-    const totalRealRework = filteredProjects.reduce((acc, p) => {
-      const rejectionsInHistory = p.comentarios?.filter(c => 
-        c.isSystemEvent && c.text?.includes("RECHAZADO en [REVISIÓN QA")
-      )?.length || 0;
-      return acc + rejectionsInHistory;
-    }, 0);
+    const totalRealRework = filteredProjects.reduce((acc, p) => acc + (p.metric_qaRejections || 0), 0);
     
     // Client Corrections
     const totalClientCorrections = Math.round(filteredProjects.reduce((acc, p) => acc + (p.client_rejection_count || 0), 0));
@@ -122,7 +117,7 @@ const CommercialIntelligence: React.FC = () => {
         status: p.status,
         facturado: p.facturado,
         pagado: p.pagado,
-        retrabajoReal: p.comentarios?.filter(c => c.isSystemEvent && c.text?.includes("RECHAZADO en [REVISIÓN QA"))?.length || 0,
+        retrabajoReal: p.metric_qaRejections || 0,
         enRevisionQA: p.status?.includes('QA'),
         correccionesCliente: p.client_rejection_count || 0,
         createdAt: p.createdAt,

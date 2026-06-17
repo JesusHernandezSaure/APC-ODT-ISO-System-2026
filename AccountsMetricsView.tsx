@@ -521,10 +521,7 @@ export const AccountsMetricsView: React.FC = () => {
     reportProjects.forEach(p => {
       let firstDeliveryStr = p.client_standby_periods?.[0]?.start || null;
       if (!firstDeliveryStr) {
-        const standbyComments = p.comentarios?.filter(c => c.isSystemEvent && c.text?.includes('puesta en Standby')) || [];
-        if (standbyComments.length > 0) {
-          firstDeliveryStr = standbyComments[standbyComments.length - 1].createdAt;
-        }
+        firstDeliveryStr = p.metric_firstDeliveryDate || null;
       }
 
       if (firstDeliveryStr && p.fecha_entrega) {
@@ -600,10 +597,7 @@ export const AccountsMetricsView: React.FC = () => {
       let slaStatus = 'Sin Envío registrado';
       let firstDeliveryStr = p.client_standby_periods?.[0]?.start || null;
       if (!firstDeliveryStr) {
-        const standbyComments = p.comentarios?.filter(c => c.isSystemEvent && c.text?.includes('puesta en Standby')) || [];
-        if (standbyComments.length > 0) {
-          firstDeliveryStr = standbyComments[standbyComments.length - 1].createdAt;
-        }
+        firstDeliveryStr = p.metric_firstDeliveryDate || null;
       }
       if (firstDeliveryStr && p.fecha_entrega) {
         const actionTime = new Date(firstDeliveryStr);
@@ -785,10 +779,7 @@ export const AccountsMetricsView: React.FC = () => {
     filteredProjects.forEach(p => {
       let firstDeliveryStr = p.client_standby_periods?.[0]?.start || null;
       if (!firstDeliveryStr) {
-        const standbyComments = p.comentarios?.filter(c => c.isSystemEvent && c.text?.includes('puesta en Standby')) || [];
-        if (standbyComments.length > 0) {
-          firstDeliveryStr = standbyComments[standbyComments.length - 1].createdAt;
-        }
+        firstDeliveryStr = p.metric_firstDeliveryDate || null;
       }
 
       if (firstDeliveryStr && p.fecha_entrega) {

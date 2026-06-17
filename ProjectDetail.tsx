@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Editor } from '@tinymce/tinymce-react';
 import { useODT } from './ODTContext';
@@ -8,13 +8,31 @@ import { Icons } from './constants';
 import { auditProjectISO } from './services/geminiService';
 import { calculateRoadmap, GLOBAL_STAGES, getPriorityInfo, OPERATIVE_AREAS, normalizeString } from './workflowConfig';
 import EditODTForm from './EditODTForm';
+import { ref, onValue } from 'firebase/database';
+import { db } from './firebase';
 
 interface ProjectDetailProps {
   project: Project;
   onBack: () => void;
 }
 
-const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
+const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, onBack }) => {
+  const [projectDetails, setProjectDetails] = useState<Partial<Project>>({});
+  
+  useEffect(() => {
+    if (!db || !initialProject.id) return;
+    const projectDetailsRef = ref(db, `project_details/${initialProject.id}`);
+    const unsubscribe = onValue(projectDetailsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setProjectDetails(snapshot.val());
+      }
+    });
+
+    return () => unsubscribe();
+  }, [initialProject.id]);
+
+  const project = { ...initialProject, ...projectDetails };
+
   const { 
     user, 
     users,
@@ -50,6 +68,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   React.useEffect(() => {
     setNewId(project.id);
   }, [project.id]);
+
+  React.useEffect(() => {
+    if (project.brief && project.brief !== briefContent) {
+      setBriefContent(project.brief);
+    }
+  }, [project.brief]);
 
   React.useEffect(() => {
     setPresentationLink(project.presentation_link || '');

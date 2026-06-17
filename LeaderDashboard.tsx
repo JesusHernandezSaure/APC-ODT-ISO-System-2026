@@ -5,6 +5,8 @@ import { useODT } from './ODTContext';
 import { UserRole, Project, User, ProjectAssignment } from './types';
 import { normalizeString, OPERATIVE_AREAS } from './workflowConfig';
 import { generateAreaReport, downloadCSV, calculateWorkingTime } from './reportUtils';
+import { get, ref } from 'firebase/database';
+import { db } from './firebase';
 
 interface LeaderDashboardProps {
   onViewProject: (id: string) => void;
@@ -137,9 +139,41 @@ const TeamAssignmentDropdown: React.FC<{
 };
 
 const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
-  const { user, projects, users, delegateProject } = useODT();
+  const { user, projects: baseProjects, users, delegateProject } = useODT();
   const [memberFilter, setMemberFilter] = useState('all');
   const [qaTimeRange, setQaTimeRange] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('all');
+  const [projectsWithDetails, setProjectsWithDetails] = useState<Project[]>(baseProjects);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(true);
+
+  useEffect(() => {
+    const fetchDetails = async () => {
+      setIsLoadingDetails(true);
+      if (!db) { setIsLoadingDetails(false); return; }
+      try {
+        const snap = await get(ref(db, 'project_details'));
+        if (snap.exists()) {
+          const details = snap.val();
+          const merged = baseProjects.map(p => {
+            if (details[p.id]) {
+              return { ...p, ...details[p.id] };
+            }
+            return p;
+          });
+          setProjectsWithDetails(merged);
+        } else {
+          setProjectsWithDetails(baseProjects);
+        }
+      } catch (e) {
+        console.error("Error fetching details", e);
+        setProjectsWithDetails(baseProjects);
+      } finally {
+        setIsLoadingDetails(false);
+      }
+    };
+    fetchDetails();
+  }, [baseProjects]);
+
+  const projects = projectsWithDetails;
 
   const getQAMetrics = (userId: string) => {
     let approved = 0;
@@ -303,12 +337,17 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
   }, [user]);
 
   const [activeArea, setActiveArea] = useState(availableAreas[0] || '');
+  const [currentSubTab, setCurrentSubTab] = useState<'working' | 'to_delegate' | 'standby'>('working');
 
   useEffect(() => {
     if (availableAreas.length > 0 && !availableAreas.includes(activeArea)) {
       setActiveArea(availableAreas[0]);
     }
   }, [availableAreas, activeArea]);
+
+  useEffect(() => {
+    setCurrentSubTab('working');
+  }, [activeArea, memberFilter]);
 
   const teamMembers = useMemo(() => {
     if (!user || !users) return [];
@@ -372,10 +411,45 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     return filtered;
   }, [projects, activeArea, memberFilter]);
 
-  if (!user || !projects || !users) {
+  const splitProjects = useMemo(() => {
+    const toDelegate: Project[] = [];
+    const working: Project[] = [];
+    const standby: Project[] = [];
+
+    areaProjects.forEach(p => {
+      const currentAssignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(activeArea));
+      const hasClientLink = p.presentation_link || p.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
+      const isStandby = p.enStandby || 
+                        p.status === 'En revisión con cliente' || 
+                        (p.etapa_actual || p.etapaActual || '').toUpperCase().includes('REVISIÓN CON CLIENTE') || 
+                        (p.etapa_actual || p.etapaActual || '').toUpperCase().includes('STANDBY') || 
+                        hasClientLink;
+
+      const isAssigned = currentAssignment && (currentAssignment.usuarioId || (currentAssignment.usuarioIds && currentAssignment.usuarioIds.length > 0));
+
+      if (isStandby) {
+        standby.push(p);
+      } else if (!isAssigned) {
+        toDelegate.push(p);
+      } else {
+        working.push(p);
+      }
+    });
+
+    return { toDelegate, working, standby };
+  }, [areaProjects, activeArea]);
+
+  const projectsToDisplay = useMemo(() => {
+    if (currentSubTab === 'to_delegate') return splitProjects.toDelegate;
+    if (currentSubTab === 'standby') return splitProjects.standby;
+    return splitProjects.working;
+  }, [currentSubTab, splitProjects]);
+
+  if (!user || !projects || !users || isLoadingDetails) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apc-green"></div>
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Sincronizando Historial de Operaciones...</p>
       </div>
     );
   }
@@ -619,7 +693,62 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
 
       {/* Tabla de Gestión de ODTs */}
       {user?.role !== UserRole.Admin && (
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden animate-fadeIn">
+        
+        {/* Selector de Pestañas Operativas del Líder */}
+        <div className="flex flex-wrap border-b border-slate-100 bg-slate-50/50">
+          <button
+            id="subtab-to-delegate"
+            onClick={() => setCurrentSubTab('to_delegate')}
+            className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ${
+              currentSubTab === 'to_delegate'
+                ? 'border-apc-pink text-apc-pink bg-white font-black'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <span>Por Delegar (Asignación Pendiente)</span>
+            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+              currentSubTab === 'to_delegate' ? 'bg-apc-pink text-white shadow-sm' : 'bg-slate-200 text-slate-500'
+            }`}>
+              {splitProjects.toDelegate.length}
+            </span>
+          </button>
+          
+          <button
+            id="subtab-working"
+            onClick={() => setCurrentSubTab('working')}
+            className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ${
+              currentSubTab === 'working'
+                ? 'border-apc-green text-apc-green bg-white font-black'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <span>En Progreso (Trabajando)</span>
+            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+              currentSubTab === 'working' ? 'bg-apc-green text-white shadow-sm' : 'bg-slate-200 text-slate-500'
+            }`}>
+              {splitProjects.working.length}
+            </span>
+          </button>
+
+          <button
+            id="subtab-standby"
+            onClick={() => setCurrentSubTab('standby')}
+            className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ${
+              currentSubTab === 'standby'
+                ? 'border-purple-600 text-purple-600 bg-white font-black'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <span>Esperando Cliente / Standby</span>
+            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+              currentSubTab === 'standby' ? 'bg-purple-600 text-white shadow-sm' : 'bg-slate-200 text-slate-500'
+            }`}>
+              {splitProjects.standby.length}
+            </span>
+          </button>
+        </div>
+
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-400 uppercase text-[10px] font-black tracking-widest">
             <tr>
@@ -630,19 +759,23 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {areaProjects.length === 0 ? (
+            {projectsToDisplay.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-6 py-10 text-center text-slate-300 italic font-medium uppercase text-[10px] tracking-widest">No hay proyectos activos requiriendo gestión en esta área estratégica.</td>
+                <td colSpan={4} className="px-6 py-10 text-center text-slate-300 italic font-medium uppercase text-[10px] tracking-widest">
+                  {currentSubTab === 'to_delegate' ? 'No hay proyectos pendientes de delegar o asignar en esta área.' :
+                   currentSubTab === 'standby' ? 'No hay proyectos en revisión con cliente o stand-by.' :
+                   'No hay proyectos actualmente en progreso.'}
+                </td>
               </tr>
             ) : (
-              areaProjects.map(p => {
+              projectsToDisplay.map(p => {
                 const currentAssignmentArea = activeArea;
                 const currentAssignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(currentAssignmentArea));
                 const isAssignedToMe = currentAssignment?.usuarioIds?.includes(user?.id || '') || currentAssignment?.usuarioId === user?.id;
-
+ 
                 const hasClientLink = p.presentation_link || p.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
                 const displayStatus = (p.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : p.status;
-
+ 
                 return (
                   <tr key={p.id} className={`hover:bg-slate-50/80 transition-colors ${isAssignedToMe ? 'bg-apc-green/5' : ''}`}>
                     <td className="px-6 py-4">

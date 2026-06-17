@@ -55,12 +55,11 @@ const exportMasterCSV = (projects: Project[], users: User[]) => {
     const numAreas = p.areas_seleccionadas?.length || 1;
     const costPerArea = (p.monto_proyectado || 0) / numAreas;
 
-    const qaRejections = p.comentarios?.filter((c: ProjectComment) => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0;
+    const qaRejections = p.metric_qaRejections || 0;
     const clientRejections = p.client_rejection_count || 0;
     
-    const approvers = p.comentarios?.filter((c: ProjectComment) => c.isSystemEvent && c.text.includes("APROBADO"))
-      .map((c: ProjectComment) => `${c.authorName} (${c.text.split(' ')[0]})`)
-      .join(" | ") || "N/A";
+    // Fallback: If metric is an array of names (which we don't have exactly, we have count), let's just show count.
+    const approvers = `${p.metric_approvals || 0} Aprobaciones`;
 
     const assignments = p.asignaciones?.map((a: ProjectAssignment) => {
       const assignedUsers = users.filter((u: User) => a.usuarioIds?.includes(u.id) || a.usuarioId === u.id);
@@ -68,7 +67,7 @@ const exportMasterCSV = (projects: Project[], users: User[]) => {
       return `${a.area}: ${names || 'Pte'}`;
     }).join(" | ") || "N/A";
 
-    const lastComment = p.comentarios?.[0];
+    const lastComment = p.metric_lastComment;
 
     return [
       p.id,
@@ -540,6 +539,47 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
   const [activeTab, setActiveTab] = useState<'tasks' | 'standby'>('tasks');
 
   const { user, projects, users, checkSLA } = useODT();
+
+  const accountsUsers = useMemo(() => {
+    return (users || []).filter(u => {
+      const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+      if (hasRole(u, UserRole.Admin)) return false;
+      return u.role === UserRole.Cuentas_Opera || u.role === UserRole.Cuentas_Lider;
+    });
+  }, [users]);
+
+  const getExecutiveODTCount = (execName: string, tab: 'tasks' | 'standby') => {
+    if (!projects) return 0;
+    const execUser = users.find(u => u.name === execName);
+    if (!execUser) return 0;
+
+    return projects.filter(p => {
+      const projectStage = normalizeString(p.etapa_actual || '');
+      const isStandby = p.enStandby || p.status === 'En revisión con cliente' || projectStage.includes('en revision con cliente');
+      if (tab === 'tasks' && isStandby) return false;
+      if (tab === 'standby' && !isStandby) return false;
+
+      const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(execUser.id) || a.usuarioId === execUser.id);
+      const isOwner = p.assignedExecutives?.includes(execUser.id);
+      return isAssigned || isOwner;
+    }).length;
+  };
+
+  const getTotalODTCount = (tab: 'tasks' | 'standby') => {
+    if (!projects) return 0;
+    return projects.filter(p => {
+      const projectStage = normalizeString(p.etapa_actual || '');
+      const isStandby = p.enStandby || p.status === 'En revisión con cliente' || projectStage.includes('en revision con cliente');
+      if (tab === 'tasks' && isStandby) return false;
+      if (tab === 'standby' && !isStandby) return false;
+
+      const involvesCuentas = p.asignaciones?.some(a => normalizeString(a.area) === 'cuentas') || 
+                              (p.assignedExecutives && p.assignedExecutives.length > 0) || 
+                              projectStage.includes('cuentas');
+      return involvesCuentas;
+    }).length;
+  };
+
   const isGlobalLead = user?.role === UserRole.Admin;
 
   const isLeader = useMemo(() => {
@@ -603,7 +643,17 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
         // 2. RBAC Logic: Leaders vs Operatives
         let passesRBAC = false;
         if (isLeaderRole) {
-          if (userDept === 'cuentas') {
+          if (userRole === UserRole.Cuentas_Lider) {
+            const isAssignedToCuentas = p.asignaciones?.some(a => normalizeString(a.area) === 'cuentas') || p.asignaciones?.some(a => {
+              return a.usuarioIds?.some(uid => {
+                const u = users.find(u => u.id === uid);
+                return u?.role === UserRole.Cuentas_Opera || u?.role === UserRole.Cuentas_Lider;
+              }) || (a.usuarioId && users.find(u => u.id === a.usuarioId)?.role === UserRole.Cuentas_Opera);
+            });
+            const hasCuentasExec = p.assignedExecutives && p.assignedExecutives.length > 0;
+            const isMyTurn = projectStage.includes('cuentas');
+            if (isAssignedToCuentas || hasCuentasExec || isMyTurn) passesRBAC = true;
+          } else if (userDept === 'cuentas') {
             const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(userId || '') || a.usuarioId === userId);
             const isOwner = p.assignedExecutives?.includes(userId || '');
             const isMyTurn = projectStage.includes('cuentas');
@@ -708,6 +758,61 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
           </div>
         </header>
 
+        {(user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Admin) && accountsUsers.length > 0 && (
+          <div className="flex flex-col gap-3 bg-white p-5 rounded-3xl border border-slate-100 shadow-sm animate-fadeIn mb-4">
+            <div className="flex items-center gap-2">
+              <Icons.Users className="w-4 h-4 text-slate-400" />
+              <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filtrar cartera por Ejecutivo de Cuentas:</h2>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              {/* Botón de Todos */}
+              <button
+                id="filter-exec-all"
+                onClick={() => setFilterResponsible('Todas')}
+                className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm border ${
+                  filterResponsible === 'Todas'
+                    ? 'bg-slate-900 border-slate-900 text-white shadow-slate-900/10'
+                    : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/60'
+                }`}
+              >
+                <span>TODO EL EQUIPO</span>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] ${
+                  filterResponsible === 'Todas' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {getTotalODTCount(activeTab)}
+                </span>
+              </button>
+
+              {/* Un botón por Ejecutivo */}
+              {accountsUsers.map(m => {
+                const count = getExecutiveODTCount(m.name, activeTab);
+                const isSelected = filterResponsible === m.name;
+
+                return (
+                  <button
+                    id={`filter-exec-${m.id}`}
+                    key={m.id}
+                    onClick={() => setFilterResponsible(m.name)}
+                    className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-sm border ${
+                      isSelected
+                        ? 'bg-apc-pink border-apc-pink text-white shadow-md shadow-apc-pink/20'
+                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200/60'
+                    }`}
+                  >
+                    <span>{m.name}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {(user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera || user?.role === UserRole.Admin) && (
           <div className="flex border-b border-slate-100 -mx-2 px-2 sticky top-[80px] bg-white z-10 pt-2">
             <button 
@@ -762,7 +867,7 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
             </select>
           </div>
 
-          {isLeader && (
+          {isLeader && !(user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Admin) && (
             <div className="flex flex-col gap-1">
               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Responsable</label>
               <select 

@@ -82,7 +82,7 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
 
           const isUnassigned = highlightUnassigned && responsibleUsers.length === 0;
 
-          const hasClientLink = p.presentation_link || p.comentarios?.some(c => c.text.includes('PRESENTACIÓN PARA CLIENTE'));
+          const hasClientLink = p.presentation_link || p.metric_hasClientLink;
           const displayStatus = (p.status === 'En revisión con cliente' || hasClientLink) ? 'En revisión con cliente' : p.status;
 
           const correctionCount = p.correction_count_after_presentation || 0;

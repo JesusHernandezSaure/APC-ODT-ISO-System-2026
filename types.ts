@@ -89,6 +89,21 @@ export interface Project {
   complejidad?: 'Baja' | 'Media' | 'Alta';
   paginas_estimadas?: number;
   minutos_video_estimados?: number;
+  // Optimization Metrics (for Dashboards without loading full comments)
+  metric_qaRejections?: number;
+  metric_standbys?: number;
+  metric_lastComment?: ProjectComment;
+  metric_approvals?: number;
+  metric_retrabajoReal?: number;
+  metric_advancements?: number;
+  metric_areaRejections?: Record<string, number>;
+  metric_hasClientLink?: boolean;
+  metric_qaEntry?: boolean;
+  metric_qaExit?: boolean;
+  metric_firstDeliveryDate?: string;
+  metric_qaEntryDate?: string;
+  metric_qaExitDate?: string;
+  
   brief: string;
   facturado?: boolean;
   pagado?: boolean;

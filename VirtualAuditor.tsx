@@ -52,7 +52,7 @@ const VirtualAuditor: React.FC = () => {
       data.byCategory[p.category] = (data.byCategory[p.category] || 0) + 1;
       
       // Corrections
-      const internal = p.comentarios?.filter(c => c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")).length || 0;
+      const internal = p.metric_qaRejections || 0;
       const client = p.client_rejection_count || 0;
       data.internalCorrections += internal;
       data.clientCorrections += client;

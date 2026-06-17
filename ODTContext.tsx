@@ -4,8 +4,12 @@ import { ref, onValue, update, get, set, query, orderByChild, equalTo, limitToLa
 import { db } from './firebase';
 import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material, Notification as ProjectNotification, ProjectComment } from './types';
 import { GLOBAL_STAGES, calculateRoadmap, normalizeString } from './workflowConfig';
+import { computeProjectMetrics } from './metricUtils';
 
 const ODTContext = createContext<ODTContextType | undefined>(undefined);
+
+// .... Later inside ODTProvider:
+
 
 const escapeFirebaseKey = (key: string) => key.toLowerCase().trim().replace(/[.#$/[\]]/g, '_');
 
@@ -314,6 +318,64 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await set(ref(db, `notifications_v3/${id}`), newNotif);
   };
 
+  const updateProjectInDB = async (projectId: string, incomingUpdates: any) => {
+    if (!db) return;
+    const projectToUpdate = projects.find(p => p.id === projectId) || deletedProjects.find(p => p.id === projectId);
+    const updates = { ...incomingUpdates };
+
+    // Si hay actualizaciones de comentarios, asegurar que recuperamos el historial completo
+    if (updates.comentarios !== undefined) {
+      let existingComments: any[] = [];
+      try {
+        const snap = await get(ref(db, `project_details/${projectId}/comentarios`));
+        if (snap.exists()) {
+          existingComments = snap.val() || [];
+        }
+      } catch (e) {
+        console.error("Error fetching existing comments", e);
+      }
+      
+      const providedComments = Array.isArray(updates.comentarios) ? updates.comentarios : [];
+      const allComments = [...providedComments, ...existingComments];
+      
+      const seenIds = new Set();
+      const mergedComments = [];
+      for (const cmd of allComments) {
+         if (cmd.id && !seenIds.has(cmd.id)) {
+            seenIds.add(cmd.id);
+            mergedComments.push(cmd);
+         } else if (!cmd.id) {
+            mergedComments.push(cmd);
+         }
+      }
+      updates.comentarios = mergedComments;
+    }
+    
+    if (projectToUpdate && (updates.comentarios !== undefined || updates.presentation_link !== undefined || updates.status !== undefined || updates.etapa_actual !== undefined)) {
+      const simulatedProject = { ...projectToUpdate, ...updates };
+      const calculatedMetrics = computeProjectMetrics(simulatedProject);
+      Object.entries(calculatedMetrics).forEach(([key, value]) => {
+        if (value !== undefined) updates[key] = value;
+      });
+    }
+
+    const rootUpdates: Record<string, any> = {};
+    const hasDetails = updates.comentarios !== undefined || updates.brief !== undefined;
+    
+    // Split heavy fields into project_details
+    Object.entries(updates).forEach(([key, value]) => {
+      if (key === 'comentarios') {
+        rootUpdates[`project_details/${projectId}/comentarios`] = value;
+      } else if (key === 'brief') {
+        rootUpdates[`project_details/${projectId}/brief`] = value;
+      } else {
+        rootUpdates[`projects/${projectId}/${key}`] = value;
+      }
+    });
+
+    await update(ref(db), rootUpdates);
+  };
+
   const markNotificationAsRead = async (id: string) => {
     if (!db) return;
     await update(ref(db, `notifications_v3/${id}`), { read: true });
@@ -358,44 +420,53 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
+    const rootUpdates: Record<string, any> = {};
+    const { brief, ...projectBase } = projectData;
+
     const newProject = {
-      ...projectData,
+      ...projectBase,
       esCampana: isCampana,
       estadoPorArea: isCampana ? estadoPorArea : null,
       status: isCampana ? 'En Proceso' : 'Borrador',
       current_stage_index: 0,
       etapa_actual: GLOBAL_STAGES.START,
       etapaActual: GLOBAL_STAGES.START,
-      assignedExecutives: projectData.assignedExecutives || [user.id],
+      assignedExecutives: projectBase.assignedExecutives || [user.id],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      comentarios: [
-        { id: `sys-${Date.now()}`, authorId: user.id, authorName: user.name, text: isCampana ? `MODO CAMPAÑA INICIADO: Flujo en Paralelo.` : `ODT INICIADA EN ${GLOBAL_STAGES.START.toUpperCase()}`, createdAt: new Date().toISOString(), isSystemEvent: true },
-        { 
-          id: `brief-init-${Date.now()}`, 
-          authorId: user.id, 
-          authorName: user.name, 
-          text: 'Brief Maestro inicial registrado', 
-          createdAt: new Date().toISOString(), 
-          isSystemEvent: true,
-          tipo: 'BRIEF_INICIAL',
-          contenidoHTML: projectData.brief || ''
-        },
-        ...(projectData.referenceLinks && projectData.referenceLinks.length > 0 ? [{
-          id: `ref-${Date.now()}`,
-          authorId: user.id,
-          authorName: user.name,
-          text: `ENLACE GENERAL DEL PROYECTO: ${projectData.referenceLinks.join(', ')}`,
-          createdAt: new Date().toISOString(),
-          isSystemEvent: true
-        }] : [])
-      ],
       asignaciones: [],
       pagado: false,
       facturado: false
     };
-    await set(ref(db, `projects/${projectId}`), newProject);
-    await syncCalendarEvent(projectId, newProject);
+
+    const comentarios = [
+      { id: `sys-${Date.now()}`, authorId: user.id, authorName: user.name, text: isCampana ? `MODO CAMPAÑA INICIADO: Flujo en Paralelo.` : `ODT INICIADA EN ${GLOBAL_STAGES.START.toUpperCase()}`, createdAt: new Date().toISOString(), isSystemEvent: true },
+      { 
+        id: `brief-init-${Date.now()}`, 
+        authorId: user.id, 
+        authorName: user.name, 
+        text: 'Brief Maestro inicial registrado', 
+        createdAt: new Date().toISOString(), 
+        isSystemEvent: true,
+        tipo: 'BRIEF_INICIAL',
+        contenidoHTML: brief || ''
+      },
+      ...(projectBase.referenceLinks && projectBase.referenceLinks.length > 0 ? [{
+        id: `ref-${Date.now()}`,
+        authorId: user.id,
+        authorName: user.name,
+        text: `ENLACE GENERAL DEL PROYECTO: ${projectBase.referenceLinks.join(', ')}`,
+        createdAt: new Date().toISOString(),
+        isSystemEvent: true
+      }] : [])
+    ];
+
+    rootUpdates[`projects/${projectId}`] = newProject;
+    rootUpdates[`project_details/${projectId}/brief`] = brief || '';
+    rootUpdates[`project_details/${projectId}/comentarios`] = comentarios;
+
+    await update(ref(db), rootUpdates);
+    await syncCalendarEvent(projectId, newProject as Project);
 
     // Notificación para el líder de cuentas (si no es el mismo que crea)
     const accountsLeader = users.find(u => u.role === UserRole.Cuentas_Lider);
@@ -416,7 +487,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...projectData,
       updatedAt: new Date().toISOString()
     };
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
     await syncCalendarEvent(projectId, { ...projects.find(p => p.id === projectId), ...updates });
   };
 
@@ -435,7 +506,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedAt: new Date().toISOString()
       };
 
-      await update(ref(db, `projects/${projectId}`), updates);
+      await updateProjectInDB(projectId, updates);
       await syncCalendarEvent(projectId, { ...project, ...updates });
     } catch (error) {
       console.error("Error al eliminar ODT:", error);
@@ -454,7 +525,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deletionReason: null,
         updatedAt: new Date().toISOString()
       };
-      await update(ref(db, `projects/${projectId}`), updates);
+      await updateProjectInDB(projectId, updates);
       const project = projects.find(p => p.id === projectId);
       await syncCalendarEvent(projectId, { ...project, ...updates });
     } catch (error) {
@@ -497,7 +568,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updates.current_stage_index = stages.indexOf(GLOBAL_STAGES.CLOSING);
     }
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
   };
 
   const toggleClientStandby = async (projectId: string, active: boolean) => {
@@ -531,7 +602,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }, ...(project.comentarios || [])]
     };
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
   };
 
   const advanceProjectStage = async (projectId: string, comment: string) => {
@@ -578,7 +649,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updates.accounts_approval_ok = false;
     }
     
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
 
     // Notificación para el líder de la siguiente área
     const nextArea = proximaArea;
@@ -663,7 +734,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updates.fecha_finalizado = new Date().toISOString();
       }
 
-      await update(ref(db, `projects/${projectId}`), updates);
+      await updateProjectInDB(projectId, updates);
 
       // Notificación para el líder de la siguiente área
       const nextLeader = users.find(u => {
@@ -715,7 +786,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isSystemEvent: true 
         }, ...(project.comentarios || [])]
       };
-      await update(ref(db, `projects/${projectId}`), updates);
+      await updateProjectInDB(projectId, updates);
 
       // Notificación al Creador/Ejecutivo (Owner)
       if (project.assignedExecutives) {
@@ -804,7 +875,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isSystemEvent: true
         }, ...(project.comentarios || [])]
       };
-      await update(ref(db, `projects/${projectId}`), updates);
+      await updateProjectInDB(projectId, updates);
     } else {
       const targetIndex = stages.indexOf(targetArea);
       
@@ -824,7 +895,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isSystemEvent: true
         }, ...(project.comentarios || [])]
       };
-      await update(ref(db, `projects/${projectId}`), updates);
+      await updateProjectInDB(projectId, updates);
     }
   };
   const processAccountsReview = async (projectId: string, approved: boolean, feedback: string, returnToArea?: string, selectedAreas?: string[]) => {
@@ -847,7 +918,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isSystemEvent: true
         }, ...(project.comentarios || [])]
       };
-      await update(ref(db, `projects/${projectId}`), updates);
+      await updateProjectInDB(projectId, updates);
     } else {
       let targetArea = returnToArea || stages[project.current_stage_index - 1];
       
@@ -874,7 +945,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isSystemEvent: true
           }, ...(project.comentarios || [])]
         };
-        await update(ref(db, `projects/${projectId}`), updates);
+        await updateProjectInDB(projectId, updates);
       } else {
         const targetIndex = stages.indexOf(targetArea);
         
@@ -894,7 +965,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isSystemEvent: true
           }, ...(project.comentarios || [])]
         };
-        await update(ref(db, `projects/${projectId}`), updates);
+        await updateProjectInDB(projectId, updates);
       }
 
       // Notificación al Creador/Ejecutivo (Owner)
@@ -976,7 +1047,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...(project.comentarios || [])
       ]
     };
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
   };
 
   const processClientFeedback = async (projectId: string, result: 'approved' | 'approved_with_corrections' | 'rejected', feedback: string, returnToArea?: string, selectedAreas?: string[]) => {
@@ -1136,7 +1207,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
 
     // Notificación al Creador/Ejecutivo (Owner) si entra en correcciones
     if (updates.status === 'Correcciones' && project.assignedExecutives) {
@@ -1215,7 +1286,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString()
     };
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
 
     // Detección de menciones (@usuario)
     const mentionRegex = /@([\w.]+)/g;
@@ -1296,7 +1367,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: new Date().toISOString()
     };
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
   };
 
   const updateBilling = async (projectId: string, facturado: boolean, justification?: string) => {
@@ -1311,7 +1382,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSystemEvent: true
     };
     const isFinalized = facturado && (project?.pagado || false);
-    await update(ref(db, `projects/${projectId}`), { 
+    await updateProjectInDB(projectId, { 
       facturado, 
       justificacion_no_facturado: justification || "", 
       status: isFinalized ? 'Finalizado' : (project?.status || 'Pendiente de pago'),
@@ -1332,7 +1403,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSystemEvent: true
     };
     const isFinalized = pagado && (project?.facturado || false);
-    await update(ref(db, `projects/${projectId}`), { 
+    await updateProjectInDB(projectId, { 
       pagado, 
       status: isFinalized ? 'Finalizado' : (project?.status || 'Pendiente de pago'),
       updatedAt: new Date().toISOString(),
@@ -1351,7 +1422,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
     const newAsignaciones = [...(project.asignaciones || []).filter(a => a.area !== area), { area, usuarioIds: userIds, status: 'en_progreso' }];
-    await update(ref(db, `projects/${projectId}`), { asignaciones: newAsignaciones, updatedAt: new Date().toISOString() });
+    await updateProjectInDB(projectId, { asignaciones: newAsignaciones, updatedAt: new Date().toISOString() });
 
     // Notificación para los usuarios asignados
     for (const uid of userIds) {
@@ -1392,7 +1463,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const updatedMateriales = [...(project.materiales || []), newMaterial];
-    await update(ref(db, `projects/${projectId}`), { 
+    await updateProjectInDB(projectId, { 
       materiales: updatedMateriales,
       updatedAt: new Date().toISOString()
     });
@@ -1433,7 +1504,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }, ...(project.comentarios || [])];
     }
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
   };
 
   const updateProjectDate = async (projectId: string, newDate: string) => {
@@ -1450,7 +1521,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSystemEvent: true
     };
 
-    await update(ref(db, `projects/${projectId}`), { 
+    await updateProjectInDB(projectId, { 
       fecha_entrega: newDate,
       updatedAt: new Date().toISOString(),
       comentarios: [newComment, ...(project.comentarios || [])]
@@ -1473,6 +1544,13 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updates: Record<string, unknown> = {};
     updates[`projects/${newDbKey}`] = { ...project, id: newDbKey, updatedAt: new Date().toISOString() };
     updates[`projects/${oldId}`] = null;
+    
+    // Also move project_details if they exist
+    const detailsSnap = await get(ref(db, `project_details/${oldId}`));
+    if (detailsSnap.exists()) {
+      updates[`project_details/${newDbKey}`] = detailsSnap.val();
+      updates[`project_details/${oldId}`] = null;
+    }
 
     // Update notifications that reference this project
     notifications.forEach(n => {
@@ -1531,7 +1609,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       comentarios: [newComment, ...(project.comentarios || [])]
     };
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
   };
 
   const fastTrackProject = async (projectId: string, destinationStage: string, justification: string) => {
@@ -1566,7 +1644,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updates.accounts_approval_ok = false;
     }
 
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
 
     // Notification for the next area leader
     const nextLeader = users.find(u => {
@@ -1622,7 +1700,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSystemEvent: true
       }, ...(project.comentarios || [])]
     };
-    await update(ref(db, `projects/${projectId}`), updates);
+    await updateProjectInDB(projectId, updates);
   };
 
   return (
@@ -1693,9 +1771,14 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        await update(ref(db, `projects/${projectId}`), updates);
-      }, updateBrief: async (p, c) => { await update(ref(db, `projects/${p}`), { brief: c, updatedAt: new Date().toISOString() }) }, 
-      processQA, 
+        await updateProjectInDB(projectId, updates);
+      }, updateBrief: async (p, c) => { 
+        const rootUpdates: Record<string, any> = {};
+        rootUpdates[`project_details/${p}/brief`] = c;
+        rootUpdates[`projects/${p}/updatedAt`] = new Date().toISOString();
+        await update(ref(db), rootUpdates);
+      }, 
+      processQA,  
       processAccountsReview,
       delegateClientCorrections,
       submitForPresentation,

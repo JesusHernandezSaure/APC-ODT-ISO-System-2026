@@ -7,10 +7,11 @@ import { OPERATIVE_AREAS } from './workflowConfig';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { generateMasterReport, downloadMasterCSV, fixOklchForHtml2Canvas } from './reportUtils';
+import { computeProjectMetrics } from './metricUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { ref, set } from 'firebase/database';
+import { ref, set, update, get } from 'firebase/database';
 import { db } from './firebase';
 
 const AdminDashboard: React.FC = () => {
@@ -18,6 +19,10 @@ const AdminDashboard: React.FC = () => {
   const { projects, users, user } = useODT();
   const [executiveFilter, setExecutiveFilter] = useState('all');
   const [periodFilter] = useState('all');
+  
+  // Export State
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   
   // Commercial Intelligence Filters
   const [filterBrand, setFilterBrand] = useState('Todas');
@@ -124,9 +129,7 @@ const AdminDashboard: React.FC = () => {
     
     // Total Real Rework (Actual rejections from history)
     const totalRealRework = filteredProjects.reduce((acc, p) => {
-      const rejectionsInHistory = p.comentarios?.filter(c => 
-        c.isSystemEvent && c.text.includes("RECHAZADO en [REVISIÓN QA")
-      ).length || 0;
+      const rejectionsInHistory = p.metric_qaRejections || 0;
       return acc + rejectionsInHistory;
     }, 0);
     
@@ -234,18 +237,36 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleExportMasterReport = () => {
+  const handleExportMasterReport = async () => {
     if (!projects || projects.length === 0) return;
     
-    const reportData = generateMasterReport(projects, users, exportDateFrom, exportDateTo);
+    setIsExporting(true);
+    setExportStatus("Descargando reporte...");
     
-    if (reportData.length === 0) {
-      alert('No hay datos para el rango de fechas seleccionado.');
-      return;
-    }
+    try {
+      let fullProjects = [...projects];
+      const detailsSnap = await get(ref(db, 'project_details'));
+      if (detailsSnap.exists()) {
+        const details = detailsSnap.val();
+        fullProjects = projects.map(p => details[p.id] ? { ...p, ...details[p.id] } : p);
+      }
 
-    downloadMasterCSV(reportData, `REPORTE_MAESTRO_BI_${new Date().toISOString().split('T')[0]}`);
-    setIsExportModalOpen(false);
+      const reportData = generateMasterReport(fullProjects, users, exportDateFrom, exportDateTo);
+      
+      if (reportData.length === 0) {
+        alert('No hay datos para el rango de fechas seleccionado.');
+        return;
+      }
+
+      downloadMasterCSV(reportData, `REPORTE_MAESTRO_BI_${new Date().toISOString().split('T')[0]}`);
+      setIsExportModalOpen(false);
+    } catch (e) {
+      console.error(e);
+      alert("Error al descargar: " + e);
+    } finally {
+      setIsExporting(false);
+      setExportStatus(null);
+    }
   };
 
   const nukeNotifications = async () => {
@@ -281,9 +302,14 @@ const AdminDashboard: React.FC = () => {
         <div className="flex flex-wrap gap-3">
           <button 
             onClick={() => setIsExportModalOpen(true)}
-            className="bg-apc-pink text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-apc-pink/80 transition-all shadow-lg shadow-apc-pink/20 flex items-center gap-2"
+            disabled={isExporting}
+            className="bg-apc-pink text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-apc-pink/80 transition-all shadow-lg shadow-apc-pink/20 flex items-center gap-2 disabled:opacity-50"
           >
-            <Icons.Plus className="w-4 h-4" /> EXPORTAR REPORTE MAESTRO
+            {isExporting ? (
+              exportStatus || 'EXPORTANDO...'
+            ) : (
+              <><Icons.Plus className="w-4 h-4" /> EXPORTAR REPORTE MAESTRO</>
+            )}
           </button>
           <button 
             onClick={nukeNotifications}

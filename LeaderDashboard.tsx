@@ -142,38 +142,36 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
   const { user, projects: baseProjects, users, delegateProject } = useODT();
   const [memberFilter, setMemberFilter] = useState('all');
   const [qaTimeRange, setQaTimeRange] = useState<'day' | 'week' | 'month' | 'year' | 'all'>('all');
-  const [projectsWithDetails, setProjectsWithDetails] = useState<Project[]>(baseProjects);
+  const [detailsCache, setDetailsCache] = useState<Record<string, any>>({});
   const [isLoadingDetails, setIsLoadingDetails] = useState(true);
 
   useEffect(() => {
+    let active = true;
     const fetchDetails = async () => {
-      setIsLoadingDetails(true);
-      if (!db) { setIsLoadingDetails(false); return; }
+      if (!db) { if (active) setIsLoadingDetails(false); return; }
       try {
         const snap = await get(ref(db, 'project_details'));
-        if (snap.exists()) {
-          const details = snap.val();
-          const merged = baseProjects.map(p => {
-            if (details[p.id]) {
-              return { ...p, ...details[p.id] };
-            }
-            return p;
-          });
-          setProjectsWithDetails(merged);
-        } else {
-          setProjectsWithDetails(baseProjects);
+        if (snap.exists() && active) {
+          setDetailsCache(snap.val());
         }
       } catch (e) {
         console.error("Error fetching details", e);
-        setProjectsWithDetails(baseProjects);
       } finally {
-        setIsLoadingDetails(false);
+        if (active) setIsLoadingDetails(false);
       }
     };
     fetchDetails();
-  }, [baseProjects]);
+    return () => { active = false; };
+  }, []); // Only fetch once on mount!
 
-  const projects = projectsWithDetails;
+  const projects = useMemo(() => {
+    return baseProjects.map(p => {
+      if (detailsCache[p.id]) {
+        return { ...p, ...detailsCache[p.id] };
+      }
+      return p;
+    });
+  }, [baseProjects, detailsCache]);
 
   const getQAMetrics = (userId: string) => {
     let approved = 0;

@@ -715,7 +715,6 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...(project.delivery_history || [])
         ] : (project.delivery_history || []),
         updatedAt: new Date().toISOString(),
-        qaChecklist: { medica: false, estilo: false, referencias: false }, // Reset checklist on approval
         comentarios: [{ 
           id: `qa-${Date.now()}`, 
           authorId: user.id, 
@@ -776,7 +775,6 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         contadorCorrecciones: newRejectionCount,
         ultimoComentarioQA: 'Rechazado por ' + user.name + ': ' + feedback,
         updatedAt: new Date().toISOString(),
-        qaChecklist: { medica: false, estilo: false, referencias: false }, // Reset checklist on rejection
         comentarios: [{ 
           id: `qa-${Date.now()}`, 
           authorId: user.id, 

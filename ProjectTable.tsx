@@ -11,21 +11,38 @@ interface ProjectTableProps {
   checkSLA: (p: Project) => { isAlert: boolean; text: string } | null;
   highlightUnassigned?: boolean;
   users: User[];
+  sortConfig?: { key: string; direction: 'asc' | 'desc' } | null;
+  onRequestSort?: (key: string) => void;
 }
 
-export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, checkSLA, highlightUnassigned, users }) => {
+export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, checkSLA, highlightUnassigned, users, sortConfig, onRequestSort }) => {
   const { user: currentUser } = useODT();
+
+  const getSortIcon = (key: string) => {
+    if (sortConfig?.key !== key) return <Icons.ChevronDown className="w-3 h-3 opacity-30" />;
+    return sortConfig.direction === 'asc' ? <Icons.ChevronUp className="w-3 h-3" /> : <Icons.ChevronDown className="w-3 h-3" />;
+  };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
       <table className="w-full text-sm text-left">
         <thead className="bg-slate-50 text-slate-500 font-black text-[10px] uppercase tracking-widest">
           <tr>
-            <th className="px-6 py-5">ODT ID</th>
-            <th className="px-6 py-5">Proyecto / Cliente</th>
-            <th className="px-6 py-5">Responsable</th>
-            <th className="px-6 py-5">Status</th>
-            <th className="px-6 py-5">Entrega / Prioridad</th>
+            <th className="px-6 py-5 cursor-pointer hover:text-indigo-600" onClick={() => onRequestSort?.('odt')}>
+              <div className="flex items-center gap-1">ODT ID {getSortIcon('odt')}</div>
+            </th>
+            <th className="px-6 py-5 cursor-pointer hover:text-indigo-600" onClick={() => onRequestSort?.('empresa')}>
+              <div className="flex items-center gap-1">Proyecto / Cliente {getSortIcon('empresa')}</div>
+            </th>
+            <th className="px-6 py-5 cursor-pointer hover:text-indigo-600" onClick={() => onRequestSort?.('responsable')}>
+              <div className="flex items-center gap-1">Responsable {getSortIcon('responsable')}</div>
+            </th>
+            <th className="px-6 py-5 cursor-pointer hover:text-indigo-600" onClick={() => onRequestSort?.('estado')}>
+              <div className="flex items-center gap-1">Status {getSortIcon('estado')}</div>
+            </th>
+            <th className="px-6 py-5 cursor-pointer hover:text-indigo-600" onClick={() => onRequestSort?.('fecha')}>
+              <div className="flex items-center gap-1">Entrega / Prioridad {getSortIcon('fecha')}</div>
+            </th>
             <th className="px-6 py-5">SLA</th>
             <th className="px-6 py-5 text-right">Acciones</th>
           </tr>

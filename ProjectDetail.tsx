@@ -73,7 +73,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
     if (project.brief && project.brief !== briefContent) {
       setBriefContent(project.brief);
     }
-  }, [project.brief]);
+  }, [project.brief, briefContent]);
 
   React.useEffect(() => {
     setPresentationLink(project.presentation_link || '');

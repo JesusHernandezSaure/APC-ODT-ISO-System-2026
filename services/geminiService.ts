@@ -1,7 +1,6 @@
+import { GoogleGenAI, Type } from "@google/genai";
 
-import {GoogleGenAI, Type} from "@google/genai";
-
-import { Project } from '../types';
+import { Project } from "../types";
 
 /**
  * Audits a project's ODT data against ISO 9001:2015 standards using AI.
@@ -9,34 +8,41 @@ import { Project } from '../types';
  */
 export async function auditProjectISO(projectData: Partial<Project>) {
   // Always create a new instance right before use to ensure the latest API key is used
-  const ai = new GoogleGenAI({apiKey: process.env.GEMINI_API_KEY});
-  
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
   const response = await ai.models.generateContent({
-    model: 'gemini-3.1-pro-preview',
+    model: "gemini-1.5-pro",
     contents: `Datos del proyecto: ${JSON.stringify(projectData)}`,
     config: {
       // Moved the audit instructions to systemInstruction as per best practices
-      systemInstruction: "Analiza esta ODT (Orden de Trabajo) bajo la normativa ISO 9001:2015. Verifica trazabilidad, completitud de campos y posibles riesgos de calidad.",
+      systemInstruction:
+        "Analiza esta ODT (Orden de Trabajo) bajo la normativa ISO 9001:2015. Verifica trazabilidad, completitud de campos y posibles riesgos de calidad.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          score: { type: Type.NUMBER, description: "Puntaje de cumplimiento del 1 al 100" },
-          findings: { 
-            type: Type.ARRAY, 
+          score: {
+            type: Type.NUMBER,
+            description: "Puntaje de cumplimiento del 1 al 100",
+          },
+          findings: {
+            type: Type.ARRAY,
             items: { type: Type.STRING },
-            description: "Lista de hallazgos encontrados"
+            description: "Lista de hallazgos encontrados",
           },
           recommendations: {
             type: Type.ARRAY,
             items: { type: Type.STRING },
-            description: "Recomendaciones para cumplir la norma"
+            description: "Recomendaciones para cumplir la norma",
           },
-          isoClause: { type: Type.STRING, description: "Cláusula ISO más relevante" }
+          isoClause: {
+            type: Type.STRING,
+            description: "Cláusula ISO más relevante",
+          },
         },
-        required: ["score", "findings", "recommendations", "isoClause"]
-      }
-    }
+        required: ["score", "findings", "recommendations", "isoClause"],
+      },
+    },
   });
 
   try {
@@ -54,10 +60,10 @@ export async function auditProjectISO(projectData: Partial<Project>) {
  * Structures a project brief using AI.
  */
 export async function structureBrief(htmlContent: string) {
-  const ai = new GoogleGenAI({apiKey: process.env.GEMINI_API_KEY});
-  
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview', // Flash is better for text restructuring and faster
+    model: "gemini-2.0-flash", // Using stable 2.0 Flash alias
     contents: `Contenido del Brief: ${htmlContent}`,
     config: {
       systemInstruction: `Eres un experto en gestión de proyectos para una agencia de producción médica y gráfica. 
@@ -73,7 +79,7 @@ export async function structureBrief(htmlContent: string) {
       3. Redacta con un tono claro, profesional y técnico.
       4. Devuelve el resultado ÚNICAMENTE en formato HTML limpio (sin etiquetas <html> o <body>).
       5. No inventes información que no esté en el brief original, pero organízala de forma lógica.`,
-    }
+    },
   });
 
   return response.text?.trim() || null;
@@ -111,16 +117,16 @@ export async function analyzeExecutivePerformance(data: {
   }[];
 }) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  
+
   const response = await ai.models.generateContent({
-    model: 'gemini-3.5-flash',
+    model: "gemini-1.5-flash",
     contents: `Por favor analiza la siguiente información de rendimiento y actividades:
     - Ejecutivo seleccionado: ${data.executiveName}
     - Período de tiempo: ${data.timeRange}
     - Marcas incluidas: ${data.brandName}
     - Métricas financieras y de control:
-      * Valor Operativo de Igualas: $ ${data.metrics.totalIgualasVal.toLocaleString('es-MX')} MXN
-      * Valor de Cargos Extra: $ ${data.metrics.totalExtrasVal.toLocaleString('es-MX')} MXN
+      * Valor Operativo de Igualas: $ ${data.metrics.totalIgualasVal.toLocaleString("es-MX")} MXN
+      * Valor de Cargos Extra: $ ${data.metrics.totalExtrasVal.toLocaleString("es-MX")} MXN
       * Total de ODTs creadas: ${data.metrics.totalCreatedCount}
       * ODTs Activas de cuenta: ${data.metrics.activeODTsCount}
       * ODTs en Revisión con cliente/Standby: ${data.metrics.enRevisionCount}
@@ -154,8 +160,77 @@ export async function analyzeExecutivePerformance(data: {
       Clasifica tus recomendaciones en "Acciones Inmediatas (Cuyo impacto será en <7 días)" y "Estrategias de Mediano Plazo".
 
       Usa un español profesional impecable con terminología de agencias publicitarias y de negocios. No inventes métricas, adhiérete enteramente a los números y proyectos provistos, dando valor estratégico a los mismos.`,
-    }
+    },
   });
 
-  return response.text?.trim() || 'No se pudo generar el análisis en este momento.';
+  return (
+    response.text?.trim() || "No se pudo generar el análisis en este momento."
+  );
+}
+
+/**
+ * Generates an area performance analysis for a selected leader or team.
+ */
+export async function analyzeLeaderPerformance(data: {
+  leaderName: string;
+  area: string;
+  timeRange: string;
+  userFilter: string;
+  metrics: {
+    totalAttended: number;
+    totalFinished: number;
+    totalApprovedFirstTime: number;
+    totalQARejections: number;
+    totalClientRejections: number;
+    avgReworksPerODT: number;
+    avgAttentionTime: string;
+    avgReviewTime: string;
+    avgTimeInQA: string;
+    slasMet: number;
+    slasMissed: number;
+    slaCompliancePercentage: number;
+    activeODTs: number;
+    closedODTs: number;
+    firstPassApprovalPercentage: number;
+    reworkIndex: number;
+    avgCorrectionCycles: number;
+  };
+  userStats: Record<string, unknown>[];
+}) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  const systemInstruction = `Eres un Auditor de Calidad (ISO 9001) y Director de Operaciones de una Agencia.
+Tu objetivo es analizar el rendimiento operativo y de calidad del área: ${data.area}, supervisada por: ${data.leaderName}, en el periodo: ${data.timeRange}.
+Filtro de usuario aplicado: ${data.userFilter}.
+
+Redacta un RESUMEN DE DESEMPEÑO inteligente y procesable en formato Markdown.
+
+Debe incluir para cada integrante del equipo (o de forma general si es todo el equipo):
+1. **Fortalezas Detectadas** (Basado en cumplimiento SLA, aprobación a la primera, productividad).
+2. **Áreas de Oportunidad** (Retrabajos, tiempos de revisión altos, rechazos).
+3. **Riesgos Identificados** (Carga de trabajo excesiva, incumplimiento crónico).
+4. **Recomendaciones Operativas** (Acciones concretas para mejorar calidad y tiempos).
+
+Sé directo, profesional, usa bullet points y resalta los datos más críticos.`;
+
+  const prompt = `Métricas Generales del Área/Filtro:
+${JSON.stringify(data.metrics, null, 2)}
+
+Estadísticas Individuales de Usuarios:
+${JSON.stringify(data.userStats, null, 2)}
+
+Por favor, genera el Resumen de Desempeño basándote en estos datos reales.`;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: prompt,
+    config: {
+      systemInstruction,
+      temperature: 0.7,
+    },
+  });
+
+  return (
+    response.text?.trim() || "No se pudo generar el análisis en este momento."
+  );
 }

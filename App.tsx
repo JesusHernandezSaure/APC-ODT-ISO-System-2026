@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { UserRole, ViewState, User, Project, ProjectComment, ProjectAssignment } from './types';
+import { UserRole, ViewState, User, Project, ProjectAssignment } from './types';
 import { Icons } from './constants';
 import { ODTProvider, useODT } from './ODTContext';
 import { AppRouter } from './AppRouter';
@@ -537,6 +537,15 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
   const [filterSubCategory, setFilterSubCategory] = useState('Todas');
   const [filterResponsible, setFilterResponsible] = useState('Todas');
   const [activeTab, setActiveTab] = useState<'tasks' | 'standby'>('tasks');
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const { user, projects, users, checkSLA } = useODT();
 
@@ -730,11 +739,39 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
       }
 
       return result.sort((a, b) => {
-        const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
-        const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
-        return dateA - dateB;
+        if (!sortConfig) {
+          const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
+          const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
+          return dateA - dateB;
+        }
+
+        let aVal: string | number = '';
+        let bVal: string | number = '';
+
+        if (sortConfig.key === 'odt') {
+          aVal = a.id;
+          bVal = b.id;
+        } else if (sortConfig.key === 'empresa') {
+          aVal = a.empresa || '';
+          bVal = b.empresa || '';
+        } else if (sortConfig.key === 'responsable') {
+          aVal = a.asignaciones?.[0]?.area || '';
+          bVal = b.asignaciones?.[0]?.area || '';
+        } else if (sortConfig.key === 'fecha') {
+            const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
+            const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
+            aVal = dateA;
+            bVal = dateB;
+        } else if (sortConfig.key === 'estado') {
+            aVal = a.status || '';
+            bVal = b.status || '';
+        }
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
       });
-    }, [projects, user, searchTerm, filterStatus, filterCategory, filterSubCategory, filterResponsible, users, activeTab]);
+    }, [projects, user, searchTerm, filterStatus, filterCategory, filterSubCategory, filterResponsible, users, activeTab, sortConfig]);
     
     return (
       <div className="space-y-6 max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
@@ -757,6 +794,20 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
             />
           </div>
         </header>
+
+        {!localStorage.getItem('dismissedSortNoticeOperative') && (
+          <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between shadow-sm z-30 mb-4">
+            <p className="text-xs font-bold text-indigo-900">
+               ¡Nueva funcionalidad! Ahora puedes organizar tus tablas haciendo clic en los encabezados de columna.
+            </p>
+            <button onClick={() => {
+                localStorage.setItem('dismissedSortNoticeOperative', 'true');
+                window.location.reload(); 
+            }} className="text-indigo-600 hover:text-indigo-800">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        )}
 
         {(user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Admin) && accountsUsers.length > 0 && (
           <div className="flex flex-col gap-3 bg-white p-5 rounded-3xl border border-slate-100 shadow-sm animate-fadeIn mb-4">
@@ -889,7 +940,7 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
                  : 'No tiene tareas asignadas en este momento.'}
              </p>
            ) : (
-             <ProjectTable projects={myProjects} onView={onViewProject} checkSLA={checkSLA} users={users} />
+             <ProjectTable projects={myProjects} onView={onViewProject} checkSLA={checkSLA} users={users} sortConfig={sortConfig} onRequestSort={requestSort} />
            )}
         </div>
       </div>
@@ -901,6 +952,15 @@ const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProjec
   const [filterCategory, setFilterCategory] = useState('Todas');
   const [filterSubCategory, setFilterSubCategory] = useState('Todas');
   const [filterResponsible, setFilterResponsible] = useState('Todas');
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const { user, projects, users, checkSLA } = useODT();
 
@@ -971,16 +1031,58 @@ const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProjec
     }
 
     return result.sort((a, b) => {
-      const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
-      const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
-      return dateA - dateB;
-    });
-  }, [projects, user, filterStatus, filterCategory, filterSubCategory, filterResponsible, users]);
+        if (!sortConfig) {
+          const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
+          const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
+          return dateA - dateB;
+        }
+
+        let aVal: string | number = '';
+        let bVal: string | number = '';
+
+        if (sortConfig.key === 'odt') {
+          aVal = a.id;
+          bVal = b.id;
+        } else if (sortConfig.key === 'empresa') {
+          aVal = a.empresa || '';
+          bVal = b.empresa || '';
+        } else if (sortConfig.key === 'responsable') {
+          aVal = a.asignaciones?.[0]?.area || '';
+          bVal = b.asignaciones?.[0]?.area || '';
+        } else if (sortConfig.key === 'fecha') {
+            const dateA = a.fecha_entrega ? new Date(a.fecha_entrega).getTime() : Infinity;
+            const dateB = b.fecha_entrega ? new Date(b.fecha_entrega).getTime() : Infinity;
+            aVal = dateA;
+            bVal = dateB;
+        } else if (sortConfig.key === 'estado') {
+            aVal = a.status || '';
+            bVal = b.status || '';
+        }
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }, [projects, user, filterStatus, filterCategory, filterSubCategory, filterResponsible, users, sortConfig]);
 
   const isGlobalQA = user?.role === UserRole.Correccion || user?.role === UserRole.Admin || user?.role === UserRole.Medico_Lider;
 
   return (
     <div className="space-y-6 animate-fadeIn max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
+      {!localStorage.getItem('dismissedSortNoticeInbox') && (
+        <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between shadow-sm z-30">
+          <p className="text-xs font-bold text-indigo-900">
+             ¡Nueva funcionalidad! Ahora puedes organizar tus tablas haciendo clic en los encabezados de columna.
+          </p>
+          <button onClick={() => {
+              localStorage.setItem('dismissedSortNoticeInbox', 'true');
+              window.location.reload(); 
+          }} className="text-indigo-600 hover:text-indigo-800">
+             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
       <header className="sticky top-0 bg-white z-20 py-4 border-b border-slate-100 -mx-2 px-2">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">Caja de QA</h1>
         <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1 italic">
@@ -1052,6 +1154,8 @@ const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProjec
              checkSLA={checkSLA} 
              users={users}
              highlightUnassigned={isGlobalQA} 
+             sortConfig={sortConfig}
+             onRequestSort={requestSort}
            />
          )}
       </div>

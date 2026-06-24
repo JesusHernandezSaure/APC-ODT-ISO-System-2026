@@ -59,7 +59,7 @@ const HelpChatbot: React.FC = () => {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: [
           ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
           { role: 'user', parts: [{ text: userMessage }] }
@@ -72,9 +72,17 @@ const HelpChatbot: React.FC = () => {
 
       const aiResponse = response.text || "Lo siento, no pude procesar tu solicitud.";
       setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Chatbot error:", error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Hubo un error al conectar con el asistente. Por favor, intenta de nuevo." }]);
+      const errorMessage = error instanceof Error ? error.message : 
+                          (typeof error === 'object' && error !== null && 'message' in error) ? String((error as { message: unknown }).message) : 
+                          String(error);
+
+      if (errorMessage.includes("503") || errorMessage.toLowerCase().includes("unavailable")) {
+        setMessages(prev => [...prev, { role: 'assistant', content: "El servicio de IA está experimentando una alta demanda. Por favor, intenta de nuevo en unos segundos." }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: "Hubo un error al conectar con el asistente. Por favor, intenta de nuevo." }]);
+      }
     } finally {
       setLoading(false);
     }

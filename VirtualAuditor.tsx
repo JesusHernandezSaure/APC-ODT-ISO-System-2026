@@ -168,7 +168,7 @@ const VirtualAuditor: React.FC = () => {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: "Realiza el análisis de auditoría y mejora para la agencia basado en los datos proporcionados.",
         config: {
           systemInstruction,
@@ -177,9 +177,17 @@ const VirtualAuditor: React.FC = () => {
       });
 
       setAnalysis(response.text || "No se pudo generar el análisis.");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("AI Analysis failed:", error);
-      setAnalysis("Error al conectar con el Auditor Virtual. Por favor, intente más tarde.");
+      const errorMessage = error instanceof Error ? error.message : 
+                          (typeof error === 'object' && error !== null && 'message' in error) ? String((error as { message: unknown }).message) : 
+                          String(error);
+
+      if (errorMessage.includes("503") || errorMessage.toLowerCase().includes("unavailable")) {
+        setAnalysis("El servicio de IA está experimentando una alta demanda. Por favor, intenta de nuevo en unos segundos.");
+      } else {
+        setAnalysis("Error al conectar con el Auditor Virtual. Por favor, intente más tarde.");
+      }
     } finally {
       setLoading(false);
     }

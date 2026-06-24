@@ -7,11 +7,10 @@ import { OPERATIVE_AREAS } from './workflowConfig';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { generateMasterReport, downloadMasterCSV, fixOklchForHtml2Canvas } from './reportUtils';
-import { computeProjectMetrics } from './metricUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { ref, set, update, get } from 'firebase/database';
+import { ref, set, get } from 'firebase/database';
 import { db } from './firebase';
 
 const AdminDashboard: React.FC = () => {
@@ -189,7 +188,7 @@ const AdminDashboard: React.FC = () => {
       }));
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: `Analiza estos datos de la agencia y genera un reporte estratégico ejecutivo:\n\n${JSON.stringify(dataForAI, null, 2)}`,
         config: {
           systemInstruction: "Eres un Consultor Estratégico Senior. Proporciona un análisis macro del negocio, identificando rentabilidad, riesgos y 3 recomendaciones clave para escalar la agencia.",
@@ -198,9 +197,17 @@ const AdminDashboard: React.FC = () => {
       });
 
       setAnalysis(response.text || "No se pudo generar el análisis.");
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("AI Analysis failed:", error);
-      setAnalysis("Error al conectar con la IA.");
+      const errorMessage = error instanceof Error ? error.message : 
+                          (typeof error === 'object' && error !== null && 'message' in error) ? String((error as { message: unknown }).message) : 
+                          String(error);
+
+      if (errorMessage.includes("503") || errorMessage.toLowerCase().includes("unavailable")) {
+        setAnalysis("El servicio de IA está experimentando una alta demanda. Por favor, intenta de nuevo en unos segundos.");
+      } else {
+        setAnalysis("Error al conectar con la IA.");
+      }
     } finally {
       setLoadingAI(false);
     }

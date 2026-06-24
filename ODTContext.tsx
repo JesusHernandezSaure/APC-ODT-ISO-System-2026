@@ -318,14 +318,14 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await set(ref(db, `notifications_v3/${id}`), newNotif);
   };
 
-  const updateProjectInDB = async (projectId: string, incomingUpdates: any) => {
+  const updateProjectInDB = async (projectId: string, incomingUpdates: Record<string, unknown>) => {
     if (!db) return;
     const projectToUpdate = projects.find(p => p.id === projectId) || deletedProjects.find(p => p.id === projectId);
-    const updates = { ...incomingUpdates };
+    const updates = { ...incomingUpdates } as Record<string, unknown> & Partial<Project>;
 
     // Si hay actualizaciones de comentarios, asegurar que recuperamos el historial completo
     if (updates.comentarios !== undefined) {
-      let existingComments: any[] = [];
+      let existingComments: ProjectComment[] = [];
       try {
         const snap = await get(ref(db, `project_details/${projectId}/comentarios`));
         if (snap.exists()) {
@@ -359,8 +359,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    const rootUpdates: Record<string, any> = {};
-    const hasDetails = updates.comentarios !== undefined || updates.brief !== undefined;
+    const rootUpdates: Record<string, unknown> = {};
     
     // Split heavy fields into project_details
     Object.entries(updates).forEach(([key, value]) => {
@@ -420,7 +419,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
 
-    const rootUpdates: Record<string, any> = {};
+    const rootUpdates: Record<string, unknown> = {};
     const { brief, ...projectBase } = projectData;
 
     const newProject = {
@@ -645,6 +644,10 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updates.fecha_finalizado = new Date().toISOString();
     }
 
+    if (proximaArea.toUpperCase().includes('REVISIÓN QA')) {
+      updates.qaChecklist = { medica: false, estilo: false, referencias: false };
+    }
+
     if (proximaArea === GLOBAL_STAGES.CLOSING) {
       updates.accounts_approval_ok = false;
     }
@@ -703,6 +706,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         contadorCorrecciones: 0, // Reset counter when approved and moving to new area
         ultimoComentarioQA: 'Aprobado por ' + user.name + (feedback ? ': ' + feedback : ''),
         fechaAprobacionQA: new Date().toISOString(),
+        qaChecklist: { medica: false, estilo: false, referencias: false },
         delivery_history: project.last_delivery_link ? [
           { 
             link: project.last_delivery_link, 
@@ -774,6 +778,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'Correcciones',
         contadorCorrecciones: newRejectionCount,
         ultimoComentarioQA: 'Rechazado por ' + user.name + ': ' + feedback,
+        qaChecklist: { medica: false, estilo: false, referencias: false },
         updatedAt: new Date().toISOString(),
         comentarios: [{ 
           id: `qa-${Date.now()}`, 
@@ -1771,7 +1776,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         await updateProjectInDB(projectId, updates);
       }, updateBrief: async (p, c) => { 
-        const rootUpdates: Record<string, any> = {};
+        const rootUpdates: Record<string, unknown> = {};
         rootUpdates[`project_details/${p}/brief`] = c;
         rootUpdates[`projects/${p}/updatedAt`] = new Date().toISOString();
         await update(ref(db), rootUpdates);

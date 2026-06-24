@@ -97,6 +97,12 @@ export const AppRouter: React.FC<{
   const { user, logout, isLoggingIn } = useODT();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showLeaderBadge] = useState(() => {
+    if (typeof window !== "undefined") {
+      return !localStorage.getItem("leader_intelligence_announcement_v2");
+    }
+    return false;
+  });
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -295,7 +301,16 @@ export const AppRouter: React.FC<{
           ) : (
             <>
               {canAccessAdminDashboard(user) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Adm." active={isModuleActive('/dashboard-adm')} isCollapsed={isCollapsed} onClick={() => { navigate('/dashboard-adm'); setIsMobileMenuOpen(false); }} />}
-              {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && <SidebarItem icon={<Icons.Dashboard />} label="Dashboard Lider" active={isModuleActive('/leader-dashboard')} isCollapsed={isCollapsed} onClick={() => { navigate('/leader-dashboard'); setIsMobileMenuOpen(false); }} />}
+              {canSee([UserRole.Lider_Operativo, UserRole.Correccion, UserRole.Medico_Lider]) && (
+                <SidebarItem 
+                  icon={<Icons.Dashboard />} 
+                  label="Dashboard Lider" 
+                  active={isModuleActive('/leader-dashboard')} 
+                  isCollapsed={isCollapsed} 
+                  hasBadge={showLeaderBadge}
+                  onClick={() => { navigate('/leader-dashboard'); setIsMobileMenuOpen(false); }} 
+                />
+              )}
               {canSee([UserRole.Cuentas_Opera, UserRole.Cuentas_Lider, UserRole.Admin]) && <SidebarItem icon={<Icons.Clients />} label="Clientes / Archivo" active={isModuleActive('/clients')} isCollapsed={isCollapsed} onClick={() => { navigate('/clients'); setIsMobileMenuOpen(false); }} />}
               {canSee([UserRole.Operativo, UserRole.Lider_Operativo, UserRole.Cuentas_Lider, UserRole.Cuentas_Opera, UserRole.Admin, UserRole.QA_Opera, UserRole.Medico_Lider, UserRole.Medico_Opera]) && <SidebarItem icon={<Icons.Project />} label="Bandeja Operativa" active={isModuleActive('/my-projects')} isCollapsed={isCollapsed} onClick={() => { navigate('/my-projects'); setIsMobileMenuOpen(false); }} />}
               {canSeeQA && <SidebarItem icon={<Icons.Ai />} label="Caja de QA" active={isModuleActive('/qa-box')} isCollapsed={isCollapsed} onClick={() => { navigate('/qa-box'); setIsMobileMenuOpen(false); }} />}
@@ -387,15 +402,18 @@ const ProjectDetailRoute: React.FC<{ renderView: (view: ViewState | string, para
   return <>{renderView('project-detail', { id })}</>;
 };
 
-const SidebarItem: React.FC<{ icon: React.ReactNode, label: string, active: boolean, isCollapsed?: boolean, onClick: () => void }> = ({ icon: Icon, label, active, isCollapsed, onClick }) => (
+const SidebarItem: React.FC<{ icon: React.ReactNode, label: string, active: boolean, isCollapsed?: boolean, hasBadge?: boolean, onClick: () => void }> = ({ icon: Icon, label, active, isCollapsed, hasBadge, onClick }) => (
   <button 
     onClick={onClick} 
     title={isCollapsed ? label : undefined}
-    className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-3 px-4'} py-3 rounded-xl transition-all group ${active ? 'bg-apc-pink text-white shadow-lg shadow-apc-pink/20' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}
+    className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-3 px-4'} py-3 rounded-xl transition-all group relative ${active ? 'bg-apc-pink text-white shadow-lg shadow-apc-pink/20' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}
   >
     <div className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
       {typeof Icon === 'function' ? <Icon /> : Icon}
     </div>
     {!isCollapsed && <span className="font-black text-[10px] uppercase tracking-widest whitespace-nowrap animate-fadeIn">{label}</span>}
+    {hasBadge && (
+      <span className={`absolute ${isCollapsed ? 'top-1 right-1' : 'top-3 right-4'} w-2 h-2 bg-white rounded-full animate-pulse shadow-sm shadow-white/50`}></span>
+    )}
   </button>
 );

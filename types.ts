@@ -66,6 +66,16 @@ export interface Material {
   fechaCreacion: string;
 }
 
+export interface ProjectWorkTracking {
+  status: 'idle' | 'in_progress' | 'paused';
+  startTime?: string; // ISO String
+  totalTimeMs: number;
+  reviewComment?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewConfirmed: boolean;
+}
+
 export interface Project {
   id: string;
   clientId: string;
@@ -81,6 +91,7 @@ export interface Project {
   areas_seleccionadas: string[];
   asignaciones: ProjectAssignment[];
   tracking: unknown[];
+  workTracking?: Record<string, ProjectWorkTracking>;
   comentarios: ProjectComment[];
   materiales?: Material[];
   monto_proyectado: number;

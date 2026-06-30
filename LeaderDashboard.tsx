@@ -250,6 +250,27 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     });
   }, [baseProjects, detailsCache]);
 
+  const getUserWorkMetrics = (userId: string) => {
+    let totalMs = 0;
+    let projectCount = 0;
+
+    projects?.forEach((p) => {
+      const tracking = p.workTracking?.[userId];
+      if (tracking) {
+        totalMs += tracking.totalTimeMs;
+        projectCount++;
+      }
+    });
+
+    const totalHours = totalMs / (1000 * 60 * 60);
+    const avgHoursPerODT = projectCount > 0 ? totalHours / projectCount : 0;
+
+    return {
+      totalHours: totalHours.toFixed(1),
+      avgHoursPerODT: avgHoursPerODT.toFixed(1),
+    };
+  };
+
   const getQAMetrics = (userId: string) => {
     let approved = 0;
     let rejected = 0;
@@ -996,7 +1017,23 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                         {metrics.avgTime}
                       </p>
                       <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
-                        Hrs Promedio
+                        Hrs Promedio QA
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">
+                        {getUserWorkMetrics(m.id).totalHours}
+                      </p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
+                        Total Horas
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">
+                        {getUserWorkMetrics(m.id).avgHoursPerODT}
+                      </p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
+                        Hrs Promedio/ODT
                       </p>
                     </div>
                   </div>
@@ -1175,6 +1212,22 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                       </p>
                       <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
                         Hrs Promedio (General)
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">
+                        {getUserWorkMetrics(m.id).totalHours}
+                      </p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
+                        Total Horas
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3 flex flex-col items-center justify-center border border-slate-100/50">
+                      <p className="text-xl font-black text-slate-800">
+                        {getUserWorkMetrics(m.id).avgHoursPerODT}
+                      </p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
+                        Hrs Promedio/ODT
                       </p>
                     </div>
                   </div>

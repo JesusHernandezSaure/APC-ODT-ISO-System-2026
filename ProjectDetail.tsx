@@ -8,6 +8,7 @@ import { Icons } from './constants';
 import { auditProjectISO } from './services/geminiService';
 import { calculateRoadmap, GLOBAL_STAGES, getPriorityInfo, OPERATIVE_AREAS, normalizeString } from './workflowConfig';
 import EditODTForm from './EditODTForm';
+import { WorkTrackingControls } from './WorkTrackingControls';
 import { ref, onValue } from 'firebase/database';
 import { db } from './firebase';
 
@@ -56,7 +57,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
     earlyCloseProject,
     reassignProjectAndFolder,
     updateAreaStatus,
-    toggleClientStandby
+    toggleClientStandby,
+    updateFullProject
   } = useODT();
   const navigate = useNavigate();
   const [briefContent, setBriefContent] = useState(project.brief);
@@ -872,6 +874,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
           </div>
         )}
 
+        {project.status !== 'Finalizado' && project.status !== 'Cancelado' && user && (
+          <WorkTrackingControls project={project} user={user} updateFullProject={updateFullProject} />
+        )}
         {project.category === 'PARRILLA RRSS' && (
           <div className="bg-white p-6 rounded-3xl border shadow-sm">
             <div className="flex justify-between items-center mb-6">

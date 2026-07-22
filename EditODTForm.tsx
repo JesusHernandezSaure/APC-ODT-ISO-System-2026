@@ -6,6 +6,8 @@ import { Project } from './types';
 import { Icons } from './constants';
 import { OPERATIVE_AREAS, CATEGORIES_CONFIG } from './workflowConfig';
 import { structureBrief } from './services/geminiService';
+import { storage } from './firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface EditODTFormProps {
   project: Project;
@@ -41,6 +43,27 @@ const EditODTForm: React.FC<EditODTFormProps> = ({ project, onClose }) => {
   const [selectedAreas, setSelectedAreas] = useState<string[]>(project.areas_seleccionadas || []);
   const [fechasInternas, setFechasInternas] = useState<Record<string, string>>(project.fechasInternas || {});
   const [brief, setBrief] = useState(project.brief || '');
+  
+  // Helper to upload images from HTML content
+  const uploadImages = async (html: string, projectId: string) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const images = doc.querySelectorAll('img');
+    
+    for (const img of images) {
+      const src = img.getAttribute('src');
+      if (src && src.startsWith('data:image')) {
+        const response = await fetch(src);
+        const blob = await response.blob();
+        const filename = `image_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+        const storageRefInstance = storageRef(storage, `briefs/${projectId}/${filename}`);
+        await uploadBytes(storageRefInstance, blob);
+        const url = await getDownloadURL(storageRefInstance);
+        img.setAttribute('src', url);
+      }
+    }
+    return doc.body.innerHTML;
+  };
   const [links, setLinks] = useState<string[]>(project.referenceLinks && project.referenceLinks.length > 0 ? project.referenceLinks : ['']);
 
   const existingBrands = Array.from(new Set(
@@ -113,6 +136,7 @@ const EditODTForm: React.FC<EditODTFormProps> = ({ project, onClose }) => {
 
     setLoading(true);
     try {
+      const processedBrief = await uploadImages(brief, project.id);
       const updatedProject: Partial<Project> = {
         marca,
         producto,
@@ -130,7 +154,7 @@ const EditODTForm: React.FC<EditODTFormProps> = ({ project, onClose }) => {
         justificacion_no_facturado: tipoCargo !== 'extra' ? justification : '',
         areas_seleccionadas: selectedAreas,
         referenceLinks: links.filter(l => l.trim() !== ''),
-        brief
+        brief: processedBrief
       };
       await updateFullProject(project.id, updatedProject);
       alert(`ODT ${project.id} actualizada exitosamente.`);

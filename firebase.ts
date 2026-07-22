@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
+import { getStorage } from "firebase/storage";
 
 // Datos exactos proporcionados por el usuario
 const firebaseConfig = {
@@ -22,10 +23,11 @@ const app = initializeApp(firebaseConfig);
  * Si está en Europa, la URL terminaría en .firebasedatabase.app
  */
 const db = getDatabase(app, firebaseConfig.databaseURL);
+const storage = getStorage(app);
 
 console.log('--- DIAGNÓSTICO DE CONEXIÓN ---');
 console.log('Project ID:', firebaseConfig.projectId);
 console.log('Database URL:', firebaseConfig.databaseURL);
 console.log('Estado:', db ? 'SISTEMA INICIALIZADO' : 'ERROR DE INSTANCIA');
 
-export { db };
+export { db, storage };

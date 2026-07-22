@@ -6,6 +6,8 @@ import { Client, Project } from './types';
 import { Icons } from './constants';
 import { OPERATIVE_AREAS, CATEGORIES_CONFIG } from './workflowConfig';
 import { structureBrief } from './services/geminiService';
+import { storage } from './firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface NewODTFormProps {
   client: Client;
@@ -45,6 +47,27 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose, isClient = fal
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [fechasInternas, setFechasInternas] = useState<Record<string, string>>({});
   const [brief, setBrief] = useState('');
+  
+  // Helper to upload images from HTML content
+  const uploadImages = async (html: string, projectId: string) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const images = doc.querySelectorAll('img');
+    
+    for (const img of images) {
+      const src = img.getAttribute('src');
+      if (src && src.startsWith('data:image')) {
+        const response = await fetch(src);
+        const blob = await response.blob();
+        const filename = `image_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+        const storageRefInstance = storageRef(storage, `briefs/${projectId}/${filename}`);
+        await uploadBytes(storageRefInstance, blob);
+        const url = await getDownloadURL(storageRefInstance);
+        img.setAttribute('src', url);
+      }
+    }
+    return doc.body.innerHTML;
+  };
   const [links, setLinks] = useState<string[]>(['']);
 
   const generateODTId = React.useCallback(() => {
@@ -136,6 +159,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose, isClient = fal
 
     setLoading(true);
     try {
+      const processedBrief = await uploadImages(brief, odtId);
       const newProject: Partial<Project> = {
         id: odtId,
         clientId: client.id,
@@ -157,7 +181,7 @@ const NewODTForm: React.FC<NewODTFormProps> = ({ client, onClose, isClient = fal
         areas_seleccionadas: isClient ? [] : selectedAreas,
         assignedExecutives: client.assignedExecutives || [],
         referenceLinks: links.filter(l => l.trim() !== ''),
-        brief,
+        brief: processedBrief,
         facturado: false,
         current_stage_index: 0
       };

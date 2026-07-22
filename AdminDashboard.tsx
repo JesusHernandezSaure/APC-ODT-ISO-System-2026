@@ -12,6 +12,7 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ref, set, get } from 'firebase/database';
 import { db } from './firebase';
+import { migrateComments } from './migration';
 
 const AdminDashboard: React.FC = () => {
   const { Icons } = Constants;
@@ -323,6 +324,18 @@ const AdminDashboard: React.FC = () => {
             className="px-4 py-2 bg-red-600 text-white font-black rounded-lg hover:bg-red-700 text-[10px] uppercase tracking-widest"
           >
             🔥 BORRAR NOTIFICACIONES
+          </button>
+          <button
+            onClick={() => migrateComments(true)}
+            className="px-4 py-2 bg-blue-600 text-white font-black rounded-lg hover:bg-blue-700 text-[10px] uppercase tracking-widest"
+          >
+            🧪 MIGRA COMENTARIOS (DRY RUN)
+          </button>
+          <button
+            onClick={() => migrateComments(false)}
+            className="px-4 py-2 bg-blue-800 text-white font-black rounded-lg hover:bg-blue-900 text-[10px] uppercase tracking-widest"
+          >
+            🚀 EJECUTAR MIGRACIÓN COMENTARIOS
           </button>
           <select className="bg-white border-2 border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest outline-none focus:border-apc-green transition-all" value={executiveFilter} onChange={(e) => setExecutiveFilter(e.target.value)}>
             <option value="all">TODOS LOS EJECUTIVOS</option>

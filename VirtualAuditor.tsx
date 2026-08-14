@@ -168,7 +168,7 @@ const VirtualAuditor: React.FC = () => {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: "Realiza el análisis de auditoría y mejora para la agencia basado en los datos proporcionados.",
         config: {
           systemInstruction,

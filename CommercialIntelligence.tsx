@@ -142,7 +142,7 @@ Basado en los datos, identifica:
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.5-flash",
         contents: `RESUMEN DE MÉTRICAS ACTUALES (FILTRADAS):
 - Volumen Total: ${kpis.total}
 - ODTs en Revisión QA (Proceso Normal): ${kpis.odtsInQA}

@@ -375,31 +375,22 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     const areaNorm = normalizeString(areaName);
 
     projects?.forEach((p) => {
-      const advancements =
-        p.comentarios?.filter(
-          (c) =>
-            c.isSystemEvent &&
-            c.authorId === userId &&
-            (c.text?.includes("Entrega Técnica") ||
-              c.text?.includes("completada")),
-        ) || [];
-
       const isAssigned = p.asignaciones?.some(
         (a) =>
           normalizeString(a.area) === areaNorm &&
           (a.usuarioIds?.includes(userId) || a.usuarioId === userId),
       );
 
-      if (isAssigned) {
-        const areaRejections =
-          p.comentarios?.filter(
-            (c) =>
-              c.isSystemEvent &&
-              c.text?.includes(`RECHAZADO en [REVISIÓN QA (${areaName})]`) &&
-              new Date(c.createdAt).getTime() >= cutoff.getTime(),
-          ) || [];
-        qARejections += areaRejections.length;
-      }
+      if (!isAssigned) return;
+
+      const areaRejections =
+        p.comentarios?.filter(
+          (c) =>
+            c.isSystemEvent &&
+            c.text?.includes(`RECHAZADO en [REVISIÓN QA (${areaName})]`) &&
+            new Date(c.createdAt).getTime() >= cutoff.getTime(),
+        ) || [];
+      qARejections += areaRejections.length;
 
       const areaKey =
         Object.keys(p.fechasInternas || {}).find(
@@ -412,69 +403,66 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       );
 
-      advancements.forEach((action) => {
-        const actionTime = new Date(action.createdAt);
-        if (actionTime.getTime() < cutoff.getTime()) return;
+      const assignments = p.asignaciones?.filter((a) => normalizeString(a.area) === areaNorm) || [];
+      const areaUserIds = assignments.flatMap((a) => [a.usuarioId, ...(a.usuarioIds || [])]).filter(Boolean);
 
-        // Ensure this advancement was actually for the area we're evaluating.
-        // Entrega Técnica or Completada logic usually falls under the user's assignment.
-        // We ensure they are assigned to this area in this project at least.
-        if (!isAssigned) return;
+      const firstDeliveryAction = sortedComments.find(
+        (c) =>
+          c.isSystemEvent &&
+          areaUserIds.includes(c.authorId) &&
+          (c.text?.includes("Entrega Técnica") ||
+            c.text?.includes("completada") ||
+            c.text?.includes("Enviado a [QA"))
+      );
 
-        completed++;
-
-        if (deadlineStr) {
-          const deadlineDateStr = deadlineStr.includes("T")
-            ? deadlineStr.split("T")[0]
-            : deadlineStr;
-          const deadline = new Date(`${deadlineDateStr}T23:59:59`);
-          if (actionTime <= deadline) {
-            onTime++;
-          } else {
-            late++;
-          }
+      // Only count if there was some action
+      let evaluatedTime = new Date(p.createdAt);
+      if (firstDeliveryAction) {
+        evaluatedTime = new Date(firstDeliveryAction.createdAt);
+        if (evaluatedTime.getTime() >= cutoff.getTime()) {
+           completed++;
+           if (deadlineStr) {
+             const deadlineDateStr = deadlineStr.includes("T") ? deadlineStr.split("T")[0] : deadlineStr;
+             const deadline = new Date(`${deadlineDateStr}T23:59:59`);
+             if (evaluatedTime <= deadline) {
+               onTime++;
+             } else {
+               late++;
+             }
+           } else {
+             onTime++; // If no deadline, we consider it on time
+           }
         }
+      }
 
-        let entryTime = new Date(p.createdAt);
-        const priorEntry = sortedComments
-          .filter(
-            (c) =>
-              c.isSystemEvent &&
-              c.text?.toLowerCase().includes(`enviado a [${areaNorm}`) &&
-              new Date(c.createdAt).getTime() <= actionTime.getTime(),
-          )
-          .pop();
+      // Calculate time spent based on first entry and last exit
+      const priorEntry = sortedComments
+        .filter(
+          (c) =>
+            c.isSystemEvent &&
+            c.text?.toLowerCase().includes(`enviado a [${areaNorm}`)
+        )
+        .pop();
 
-        if (priorEntry) {
-          entryTime = new Date(priorEntry.createdAt);
-        } else {
-          const actionIdx = sortedComments.findIndex((c) => c.id === action.id);
-          if (actionIdx > 0) {
-            const anyPriorAdvancement = sortedComments
-              .filter(
-                (c, i) =>
-                  i < actionIdx &&
-                  c.isSystemEvent &&
-                  (c.text?.includes("completada") ||
-                    c.text?.includes("APROBADO") ||
-                    c.text?.includes("RECHAZADO") ||
-                    c.text?.includes("Entrega Técnica")),
-              )
-              .pop();
-            if (anyPriorAdvancement)
-              entryTime = new Date(anyPriorAdvancement.createdAt);
-          }
-        }
+      let entryTime = new Date(p.createdAt);
+      if (priorEntry) {
+        entryTime = new Date(priorEntry.createdAt);
+      }
+      
+      let exitTime = new Date();
+      if (firstDeliveryAction) {
+        exitTime = new Date(firstDeliveryAction.createdAt);
+      }
 
-        const isFelipe =
-          action.authorName?.toLowerCase().includes("felipe lópez") || false;
+      if (firstDeliveryAction && evaluatedTime.getTime() >= cutoff.getTime()) {
+        const isFelipe = false; // Simplified here as this was a bit specific
         const timeSpent = calculateWorkingTime(
           entryTime,
-          actionTime,
+          exitTime,
           isFelipe,
         ).totalHours;
         totalHoursSpent += timeSpent;
-      });
+      }
     });
 
     const avgTime =

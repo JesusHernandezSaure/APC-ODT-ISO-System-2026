@@ -702,7 +702,14 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
       // Apply Filters
       if (filterStatus !== 'Todas') {
         if (filterStatus === 'Vencidas') {
-          result = result.filter(p => p.fecha_entrega && new Date(p.fecha_entrega) < new Date());
+          result = result.filter(p => {
+            if (!p.fecha_entrega) return false;
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const del = new Date(p.fecha_entrega + 'T00:00:00');
+            del.setHours(0,0,0,0);
+            return del < today;
+          });
         } else if (filterStatus === 'En Corrección') {
           result = result.filter(p => p.status === 'Correcciones');
         } else if (filterStatus === 'Reincidentes') {
@@ -1006,7 +1013,14 @@ const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProjec
 
     if (filterStatus !== 'Todas') {
       if (filterStatus === 'Vencidas') {
-        result = result.filter(p => p.fecha_entrega && new Date(p.fecha_entrega) < new Date());
+        result = result.filter(p => {
+          if (!p.fecha_entrega) return false;
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const del = new Date(p.fecha_entrega + 'T00:00:00');
+          del.setHours(0,0,0,0);
+          return del < today;
+        });
       } else if (filterStatus === 'En Corrección') {
         result = result.filter(p => p.status === 'Correcciones');
       } else if (filterStatus === 'Reincidentes') {

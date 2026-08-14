@@ -11,7 +11,7 @@ export async function auditProjectISO(projectData: Partial<Project>) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const response = await ai.models.generateContent({
-    model: "gemini-1.5-pro",
+    model: "gemini-2.5-pro",
     contents: `Datos del proyecto: ${JSON.stringify(projectData)}`,
     config: {
       // Moved the audit instructions to systemInstruction as per best practices
@@ -63,7 +63,7 @@ export async function structureBrief(htmlContent: string) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash", // Using stable 2.0 Flash alias
+    model: "gemini-2.5-flash",
     contents: `Contenido del Brief: ${htmlContent}`,
     config: {
       systemInstruction: `Eres un experto en gestión de proyectos para una agencia de producción médica y gráfica. 
@@ -119,7 +119,7 @@ export async function analyzeExecutivePerformance(data: {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const response = await ai.models.generateContent({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.5-flash",
     contents: `Por favor analiza la siguiente información de rendimiento y actividades:
     - Ejecutivo seleccionado: ${data.executiveName}
     - Período de tiempo: ${data.timeRange}
@@ -222,7 +222,7 @@ ${JSON.stringify(data.userStats, null, 2)}
 Por favor, genera el Resumen de Desempeño basándote en estos datos reales.`;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       systemInstruction,

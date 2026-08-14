@@ -450,12 +450,48 @@ export const generateAreaReport = (
       );
     }
 
+    const areaKey = Object.keys(p.fechasInternas || {}).find(
+      (k) => normalizeString(k) === areaNorm
+    ) || area;
+    const deadlineStr = p.fechasInternas ? p.fechasInternas[areaKey] : null;
+
+    const areaUserIds = assignments.flatMap(a => [a.usuarioId, ...(a.usuarioIds || [])]).filter(Boolean);
+    const sortedComments = [...(p.comentarios || [])].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    const firstDeliveryAction = sortedComments.find(
+      (c) => c.isSystemEvent && areaUserIds.includes(c.authorId) && (c.text?.includes("Entrega Técnica") || c.text?.includes("completada") || c.text?.includes("Enviado a [QA"))
+    );
+
+    let fechaLimiteArea = deadlineStr ? new Date(`${deadlineStr.includes("T") ? deadlineStr.split("T")[0] : deadlineStr}T23:59:59`).toLocaleDateString() : "S/F";
+    let fechaEntregaArea = "No entregado";
+    let estatusEntregaArea = "Pendiente";
+
+    if (firstDeliveryAction) {
+      const actionDate = new Date(firstDeliveryAction.createdAt);
+      fechaEntregaArea = actionDate.toLocaleString();
+      if (deadlineStr) {
+        const deadlineDateStr = deadlineStr.includes("T") ? deadlineStr.split("T")[0] : deadlineStr;
+        const deadline = new Date(`${deadlineDateStr}T23:59:59`);
+        if (actionDate <= deadline) {
+          estatusEntregaArea = "A Tiempo";
+        } else {
+          estatusEntregaArea = "A Destiempo";
+        }
+      } else {
+        estatusEntregaArea = "S/F Límite (A Tiempo)";
+      }
+    }
+
     const row: Record<string, string | number> = {
       "ID ODT": p.id,
       Empresa: p.empresa,
       Marca: p.marca,
       Área: area,
       Estado: p.status,
+      "Fecha Límite Área": fechaLimiteArea,
+      "Fecha Entrega Área": fechaEntregaArea,
+      "Estatus de Entrega": estatusEntregaArea,
       Integrantes: assignments
         .map((a) => {
           const assignedUsers = users.filter(

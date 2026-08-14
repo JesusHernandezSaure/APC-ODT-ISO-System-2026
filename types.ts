@@ -284,3 +284,5 @@ export interface ODTContextType {
   clearNotifications: () => Promise<void>;
   syncCalendarEvent: (projectId: string, data: Partial<Project>) => Promise<void>;
 }
+
+

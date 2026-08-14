@@ -96,9 +96,11 @@ export const getPriorityInfo = (fechaEntrega?: string) => {
     return { color: 'bg-apc-pink', text: 'Nivel 2', level: 2, iconColor: 'text-apc-pink', textColor: 'text-apc-pink', shape: 'rhombus' };
   } else if (diffDays === 1) {
     return { color: 'bg-rose-500', text: 'Nivel 3', level: 3, iconColor: 'text-rose-500', textColor: 'text-rose-500', shape: 'rhombus' };
-  } else if (diffDays <= 0) {
+  } else if (diffDays === 0) {
+    return { color: 'bg-orange-500', text: 'Fecha Límite', level: 4, iconColor: 'text-orange-500', textColor: 'text-orange-500', shape: 'rhombus' };
+  } else if (diffDays < 0) {
     // Vencida - use red for overdue
-    return { color: 'bg-rose-600', text: 'Vencida', level: 4, iconColor: 'text-rose-600', textColor: 'text-rose-600', shape: 'rhombus' };
+    return { color: 'bg-rose-600', text: 'Vencida', level: 5, iconColor: 'text-rose-600', textColor: 'text-rose-600', shape: 'rhombus' };
   }
   
   return { color: 'bg-slate-200', text: 'N/A', level: 0, iconColor: 'text-slate-300', textColor: 'text-slate-400', shape: 'circle' };

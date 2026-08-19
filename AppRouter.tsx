@@ -364,7 +364,7 @@ export const AppRouter: React.FC<{
         />
       )}
 
-      <main className={`flex-1 ${isCollapsed ? 'md:ml-20' : 'md:ml-64'} transition-all duration-300 p-6 md:p-10 bg-white relative min-h-screen`}>
+      <main className={`flex-1 min-w-0 ${isCollapsed ? 'md:ml-20' : 'md:ml-64'} transition-all duration-300 p-6 md:p-10 bg-white relative min-h-screen`}>
         {/* Global background pattern */}
         <div className={`fixed inset-0 pointer-events-none opacity-[0.02] bg-striped-green ${isCollapsed ? 'md:ml-20' : 'md:ml-64'} transition-all duration-300`}></div>
         <div className="relative z-10 pt-16 md:pt-0">

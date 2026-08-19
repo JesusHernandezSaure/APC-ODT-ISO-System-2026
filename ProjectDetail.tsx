@@ -549,7 +549,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 animate-fadeIn pb-20">
-      <div className="flex-1 space-y-6">
+      <div className="flex-1 min-w-0 space-y-6">
       <div className={`bg-white rounded-3xl border ${project.deleted ? 'border-rose-200 bg-rose-50/30' : 'border-slate-100'} shadow-2xl overflow-hidden mb-8 transition-all`}>
         {project.deleted && (
           <div className="bg-rose-600 text-white px-6 py-2 text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-between">
@@ -568,7 +568,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
                <span className="text-[10px] font-black uppercase tracking-widest hidden md:block">Volver</span>
             </button>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-1 group">
+              <div className="flex items-start gap-3 mb-1 group">
                 {isEditingId ? (
                   <div className="flex items-center gap-2 w-full max-w-md">
                     <input 
@@ -605,13 +605,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
                   </div>
                 ) : (
                   <>
-                    <h1 className="text-3xl font-black tracking-tighter uppercase truncate leading-tight">
+                    <h1 className="text-3xl font-black tracking-tighter uppercase leading-tight max-w-[680px] break-words">
                       {project.id}
                     </h1>
                     {isAccountOwnerOrLeader && (
                       <button 
                         onClick={() => setIsEditingId(true)}
-                        className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/20 rounded-lg transition-all"
+                        className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/20 rounded-lg transition-all mt-1"
                         title="Editar ID"
                       >
                         <Icons.Edit className="w-4 h-4" />
@@ -620,7 +620,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
                   </>
                 )}
               </div>
-              <h2 className="text-lg font-bold text-white/90 uppercase tracking-wide leading-snug">
+              <h2 className="text-lg font-bold text-white/90 uppercase tracking-wide leading-snug max-w-[680px] break-words">
                 {project.empresa} | {project.producto}
               </h2>
               {project.esCampana && (

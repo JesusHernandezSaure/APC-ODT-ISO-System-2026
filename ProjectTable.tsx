@@ -25,8 +25,9 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-      <table className="w-full text-sm text-left">
-        <thead className="bg-slate-50 text-slate-500 font-black text-[10px] uppercase tracking-widest">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 text-slate-500 font-black text-[10px] uppercase tracking-widest">
           <tr>
             <th className="px-6 py-5 cursor-pointer hover:text-indigo-600" onClick={() => onRequestSort?.('odt')}>
               <div className="flex items-center gap-1">ODT ID {getSortIcon('odt')}</div>
@@ -119,10 +120,13 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
 
           return (
             <tr key={p?.id} className={`hover:bg-slate-50/50 transition-all ${isUnassigned ? 'bg-amber-50/30 font-bold' : sla?.isAlert ? 'bg-apc-pink/5' : ''} ${isSecondRejection ? 'bg-red-50 border-l-4 border-red-500' : ''}`}>
-              <td className="px-6 py-4 font-mono font-black text-apc-pink text-xs">
-                <div className="flex items-center gap-1">
+              <td 
+                className="px-6 py-4 font-mono font-black text-apc-pink text-xs cursor-pointer group"
+                onClick={() => onView(p.id)}
+              >
+                <div className="flex items-center gap-1 group-hover:scale-105 transition-transform origin-left">
                   {isSecondRejection && <Icons.Alert className="w-3 h-3 text-red-600 animate-pulse" />}
-                  {p?.id}
+                  <span className="underline decoration-transparent group-hover:decoration-apc-pink/30">{p?.id}</span>
                 </div>
                 {isUnassigned && (
                   <div className="text-[8px] text-apc-green font-black animate-pulse mt-1 tracking-tighter uppercase">
@@ -261,6 +265,7 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
         })}
       </tbody>
     </table>
+    </div>
   </div>
   );
 };

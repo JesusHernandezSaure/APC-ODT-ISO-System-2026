@@ -536,7 +536,7 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
   const [filterCategory, setFilterCategory] = useState('Todas');
   const [filterSubCategory, setFilterSubCategory] = useState('Todas');
   const [filterResponsible, setFilterResponsible] = useState('Todas');
-  const [activeTab, setActiveTab] = useState<'tasks' | 'standby'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'standby' | 'approved' | 'pending_payment'>('tasks');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   const requestSort = (key: string) => {
@@ -557,7 +557,7 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
     });
   }, [users]);
 
-  const getExecutiveODTCount = (execName: string, tab: 'tasks' | 'standby') => {
+  const getExecutiveODTCount = (execName: string, tab: 'tasks' | 'standby' | 'approved' | 'pending_payment') => {
     if (!projects) return 0;
     const execUser = users.find(u => u.name === execName);
     if (!execUser) return 0;
@@ -565,8 +565,18 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
     return projects.filter(p => {
       const projectStage = normalizeString(p.etapa_actual || '');
       const isStandby = p.enStandby || p.status === 'En revisión con cliente' || projectStage.includes('en revision con cliente');
-      if (tab === 'tasks' && isStandby) return false;
-      if (tab === 'standby' && !isStandby) return false;
+      const isApproved = p.client_feedback === 'approved' || p.status === 'Aprobada';
+      const isPendingPayment = p.status === 'Pendiente de pago' || projectStage.includes('facturacion') || projectStage.includes('pendiente de pago');
+
+      if (tab === 'tasks') {
+        if (isStandby || isApproved || isPendingPayment) return false;
+      } else if (tab === 'standby') {
+        if (!isStandby) return false;
+      } else if (tab === 'approved') {
+        if (!isApproved) return false;
+      } else if (tab === 'pending_payment') {
+        if (!isPendingPayment) return false;
+      }
 
       const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(execUser.id) || a.usuarioId === execUser.id);
       const isOwner = p.assignedExecutives?.includes(execUser.id);
@@ -574,13 +584,23 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
     }).length;
   };
 
-  const getTotalODTCount = (tab: 'tasks' | 'standby') => {
+  const getTotalODTCount = (tab: 'tasks' | 'standby' | 'approved' | 'pending_payment') => {
     if (!projects) return 0;
     return projects.filter(p => {
       const projectStage = normalizeString(p.etapa_actual || '');
       const isStandby = p.enStandby || p.status === 'En revisión con cliente' || projectStage.includes('en revision con cliente');
-      if (tab === 'tasks' && isStandby) return false;
-      if (tab === 'standby' && !isStandby) return false;
+      const isApproved = p.client_feedback === 'approved' || p.status === 'Aprobada';
+      const isPendingPayment = p.status === 'Pendiente de pago' || projectStage.includes('facturacion') || projectStage.includes('pendiente de pago');
+
+      if (tab === 'tasks') {
+        if (isStandby || isApproved || isPendingPayment) return false;
+      } else if (tab === 'standby') {
+        if (!isStandby) return false;
+      } else if (tab === 'approved') {
+        if (!isApproved) return false;
+      } else if (tab === 'pending_payment') {
+        if (!isPendingPayment) return false;
+      }
 
       const involvesCuentas = p.asignaciones?.some(a => normalizeString(a.area) === 'cuentas') || 
                               (p.assignedExecutives && p.assignedExecutives.length > 0) || 
@@ -615,10 +635,16 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
     return ['Todas', ...new Set(filtered.map(u => u.name))];
   }, [users]);
 
+  const canViewTabs = useMemo(() => {
+    if (!user) return false;
+    const userRole = user.role as UserRole;
+    const isCuentasOrAdmin = user.department === 'Cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera || userRole === UserRole.Admin;
+    return isLeader || isCuentasOrAdmin;
+  }, [user, isLeader]);
+
   const myProjects = useMemo(() => {
     const search = normalizeString(searchTerm);
     const userRole = user?.role as UserRole;
-    const isCuentasOrAdmin = user?.department === 'Cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera || userRole === UserRole.Admin;
     
     let result = projects?.filter(p => {
       const userId = user?.id;
@@ -626,78 +652,97 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
       const projectStage = normalizeString(p.etapa_actual || '');
 
       const isStandby = p.enStandby || p.status === 'En revisión con cliente' || projectStage.includes('en revision con cliente');
+      const isApproved = p.client_feedback === 'approved' || p.status === 'Aprobada';
+      const isPendingPayment = p.status === 'Pendiente de pago' || projectStage.includes('facturacion') || projectStage.includes('pendiente de pago');
 
-      // REGLA: Excluir de bandejas operativas normales si no es Cuentas/Admin
-        if (!isCuentasOrAdmin && isStandby) return false;
-
-        // REGLA: Filtrar por pestaña para Cuentas/Admin
-        if (isCuentasOrAdmin) {
-          if (activeTab === 'tasks' && isStandby) return false;
-          if (activeTab === 'standby' && !isStandby) return false;
+      // Si el usuario no tiene pestañas habilitadas (operativos regulares no cuentas/no líderes):
+      if (!canViewTabs) {
+        if (isStandby || isApproved || isPendingPayment) return false;
+      } else {
+        // Filtrar por la pestaña activa
+        if (activeTab === 'tasks') {
+          if (isStandby || isApproved || isPendingPayment) return false;
+        } else if (activeTab === 'standby') {
+          if (!isStandby) return false;
+        } else if (activeTab === 'approved') {
+          if (!isApproved) return false;
+        } else if (activeTab === 'pending_payment') {
+          if (!isPendingPayment) return false;
         }
+      }
 
-        const isIdSearch = search && normalizeString(p.id).includes(search);
-        
-        // 1. Admin sees everything
-        if (userRole === UserRole.Admin) return true;
+      const isIdSearch = search && normalizeString(p.id).includes(search);
+      
+      // 1. Admin sees everything
+      if (userRole === UserRole.Admin) return true;
 
-        const isLeaderRole = [
-          UserRole.Cuentas_Lider,
-          UserRole.Lider_Operativo,
-          UserRole.Correccion,
-          UserRole.Medico_Lider,
-          UserRole.Administracion_Lider
-        ].includes(userRole);
+      const isLeaderRole = [
+        UserRole.Cuentas_Lider,
+        UserRole.Lider_Operativo,
+        UserRole.Correccion,
+        UserRole.Medico_Lider,
+        UserRole.Administracion_Lider
+      ].includes(userRole);
 
-        // 2. RBAC Logic: Leaders vs Operatives
-        let passesRBAC = false;
-        if (isLeaderRole) {
-          if (userRole === UserRole.Cuentas_Lider) {
-            const isAssignedToCuentas = p.asignaciones?.some(a => normalizeString(a.area) === 'cuentas') || p.asignaciones?.some(a => {
-              return a.usuarioIds?.some(uid => {
-                const u = users.find(u => u.id === uid);
-                return u?.role === UserRole.Cuentas_Opera || u?.role === UserRole.Cuentas_Lider;
-              }) || (a.usuarioId && users.find(u => u.id === a.usuarioId)?.role === UserRole.Cuentas_Opera);
-            });
-            const hasCuentasExec = p.assignedExecutives && p.assignedExecutives.length > 0;
-            const isMyTurn = projectStage.includes('cuentas');
-            if (isAssignedToCuentas || hasCuentasExec || isMyTurn) passesRBAC = true;
-          } else if (userDept === 'cuentas') {
-            const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(userId || '') || a.usuarioId === userId);
-            const isOwner = p.assignedExecutives?.includes(userId || '');
-            const isMyTurn = projectStage.includes('cuentas');
-            if (isAssigned || isOwner || isMyTurn) passesRBAC = true;
-          } else if (userDept === 'qa') {
-            const inQA = projectStage.includes('qa') || p.status === 'QA';
+      // 2. RBAC Logic: Leaders vs Operatives
+      let passesRBAC = false;
+      if (isLeaderRole) {
+        if (userRole === UserRole.Cuentas_Lider) {
+          const isAssignedToCuentas = p.asignaciones?.some(a => normalizeString(a.area) === 'cuentas') || p.asignaciones?.some(a => {
+            return a.usuarioIds?.some(uid => {
+              const u = users.find(u => u.id === uid);
+              return u?.role === UserRole.Cuentas_Opera || u?.role === UserRole.Cuentas_Lider;
+            }) || (a.usuarioId && users.find(u => u.id === a.usuarioId)?.role === UserRole.Cuentas_Opera);
+          });
+          const hasCuentasExec = p.assignedExecutives && p.assignedExecutives.length > 0;
+          const isMyTurn = projectStage.includes('cuentas');
+          if (isAssignedToCuentas || hasCuentasExec || isMyTurn) passesRBAC = true;
+        } else if (userDept === 'cuentas') {
+          const isAssigned = p.asignaciones?.some(a => a.usuarioIds?.includes(userId || '') || a.usuarioId === userId);
+          const isOwner = p.assignedExecutives?.includes(userId || '');
+          const isMyTurn = projectStage.includes('cuentas');
+          if (isAssigned || isOwner || isMyTurn) passesRBAC = true;
+        } else if (userDept === 'qa') {
+          const inQA = projectStage.includes('qa') || p.status === 'QA';
+          const wasInQA = p.areas_seleccionadas?.some(a => normalizeString(a) === 'qa') || p.asignaciones?.some(a => normalizeString(a.area) === 'qa');
+          if (activeTab === 'tasks') {
             if (inQA) passesRBAC = true;
           } else {
-            const isMyTurn = projectStage === userDept;
-            const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
-            if (isMyTurn || isCorrections) passesRBAC = true;
+            if (inQA || wasInQA) passesRBAC = true;
           }
         } else {
-          let isInMyTurn = false;
-          if (userDept === 'cuentas') {
-            isInMyTurn = projectStage.includes('cuentas');
-          } else if (userDept === 'qa') {
-            isInMyTurn = projectStage.includes('qa') || p.status === 'QA';
+          const isMyTurn = projectStage === userDept;
+          const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
+          const wasInMyArea = p.areas_seleccionadas?.some(a => normalizeString(a) === userDept) || p.asignaciones?.some(a => normalizeString(a.area) === userDept);
+          if (activeTab === 'tasks') {
+            if (isMyTurn || isCorrections) passesRBAC = true;
           } else {
-            isInMyTurn = projectStage === userDept || (p.status === 'Correcciones' && projectStage === userDept);
+            if (isMyTurn || isCorrections || wasInMyArea) passesRBAC = true;
           }
-          
-          const isAssigned = p.asignaciones?.some(a => 
-            (a.usuarioIds?.includes(userId || '') || a.usuarioId === userId) && normalizeString(a.area) === userDept
-          );
-          const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
-          
-          if (isInMyTurn && (isAssigned || isOwner)) passesRBAC = true;
         }
+      } else {
+        let isInMyTurn = false;
+        if (userDept === 'cuentas') {
+          isInMyTurn = projectStage.includes('cuentas');
+        } else if (userDept === 'qa') {
+          isInMyTurn = projectStage.includes('qa') || p.status === 'QA';
+        } else {
+          isInMyTurn = projectStage === userDept || (p.status === 'Correcciones' && projectStage === userDept);
+        }
+        
+        const isAssigned = p.asignaciones?.some(a => 
+          (a.usuarioIds?.includes(userId || '') || a.usuarioId === userId) && normalizeString(a.area) === userDept
+        );
+        const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
+        
+        if (isInMyTurn && (isAssigned || isOwner)) passesRBAC = true;
+      }
 
-        if (passesRBAC) return true;
-        if (isIdSearch) return true;
+      if (passesRBAC) return true;
+      if (isIdSearch) return true;
 
-        return false;
-      }) || [];
+      return false;
+    }) || [];
 
       // Apply Filters
       if (filterStatus !== 'Todas') {
@@ -871,19 +916,31 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
           </div>
         )}
 
-        {(user?.department === 'Cuentas' || user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Cuentas_Opera || user?.role === UserRole.Admin) && (
-          <div className="flex border-b border-slate-100 -mx-2 px-2 sticky top-[80px] bg-white z-10 pt-2">
+        {canViewTabs && (
+          <div className="flex border-b border-slate-100 -mx-2 px-2 sticky top-[80px] bg-white z-10 pt-2 overflow-x-auto custom-scrollbar">
             <button 
               onClick={() => setActiveTab('tasks')}
-              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'tasks' ? 'border-apc-pink text-apc-pink' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap ${activeTab === 'tasks' ? 'border-apc-pink text-apc-pink' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               Mis Tareas
             </button>
             <button 
               onClick={() => setActiveTab('standby')}
-              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 ${activeTab === 'standby' ? 'border-apc-purple text-apc-purple' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap ${activeTab === 'standby' ? 'border-apc-purple text-apc-purple' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               Esperando Cliente / Standby
+            </button>
+            <button 
+              onClick={() => setActiveTab('approved')}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap ${activeTab === 'approved' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            >
+              Aprobadas
+            </button>
+            <button 
+              onClick={() => setActiveTab('pending_payment')}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 whitespace-nowrap ${activeTab === 'pending_payment' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            >
+              Pendiente de pago
             </button>
           </div>
         )}

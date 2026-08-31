@@ -496,7 +496,7 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
 
   const [activeArea, setActiveArea] = useState(availableAreas[0] || "");
   const [currentSubTab, setCurrentSubTab] = useState<
-    "working" | "to_delegate" | "standby" | "intelligence"
+    "working" | "to_delegate" | "standby" | "approved" | "pending_payment" | "intelligence"
   >("working");
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
@@ -597,11 +597,14 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     const toDelegate: Project[] = [];
     const working: Project[] = [];
     const standby: Project[] = [];
+    const approved: Project[] = [];
+    const pendingPayment: Project[] = [];
 
     areaProjects.forEach((p) => {
       const currentAssignment = p.asignaciones?.find(
         (a) => normalizeString(a.area) === normalizeString(activeArea),
       );
+      const stageStr = (p.etapa_actual || p.etapaActual || "").toUpperCase();
       const hasClientLink =
         p.presentation_link ||
         p.comentarios?.some((c) =>
@@ -610,13 +613,12 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
       const isStandby =
         p.enStandby ||
         p.status === "En revisión con cliente" ||
-        (p.etapa_actual || p.etapaActual || "")
-          .toUpperCase()
-          .includes("REVISIÓN CON CLIENTE") ||
-        (p.etapa_actual || p.etapaActual || "")
-          .toUpperCase()
-          .includes("STANDBY") ||
+        stageStr.includes("REVISIÓN CON CLIENTE") ||
+        stageStr.includes("STANDBY") ||
         hasClientLink;
+
+      const isApproved = p.client_feedback === 'approved' || p.status === 'Aprobada';
+      const isPendingPayment = p.status === 'Pendiente de pago' || stageStr.includes('FACTURACION') || stageStr.includes('PENDIENTE DE PAGO');
 
       const isAssigned =
         currentAssignment &&
@@ -624,7 +626,11 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
           (currentAssignment.usuarioIds &&
             currentAssignment.usuarioIds.length > 0));
 
-      if (isStandby) {
+      if (isApproved) {
+        approved.push(p);
+      } else if (isPendingPayment) {
+        pendingPayment.push(p);
+      } else if (isStandby) {
         standby.push(p);
       } else if (!isAssigned) {
         toDelegate.push(p);
@@ -633,12 +639,14 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
       }
     });
 
-    return { toDelegate, working, standby };
+    return { toDelegate, working, standby, approved, pendingPayment };
   }, [areaProjects, activeArea]);
 
   const projectsToDisplay = useMemo(() => {
     let items = currentSubTab === "to_delegate" ? splitProjects.toDelegate :
                 currentSubTab === "standby" ? splitProjects.standby :
+                currentSubTab === "approved" ? splitProjects.approved :
+                currentSubTab === "pending_payment" ? splitProjects.pendingPayment :
                 splitProjects.working;
 
         if (sortConfig !== null) {
@@ -1424,6 +1432,48 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
             </button>
 
             <button
+              id="subtab-approved"
+              onClick={() => setCurrentSubTab("approved")}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ${
+                currentSubTab === "approved"
+                  ? "border-emerald-500 text-emerald-600 bg-white font-black"
+                  : "border-transparent text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              <span>Aprobadas</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                  currentSubTab === "approved"
+                    ? "bg-emerald-500 text-white shadow-sm"
+                    : "bg-slate-200 text-slate-500"
+                }`}
+              >
+                {splitProjects.approved.length}
+              </span>
+            </button>
+
+            <button
+              id="subtab-pending-payment"
+              onClick={() => setCurrentSubTab("pending_payment")}
+              className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ${
+                currentSubTab === "pending_payment"
+                  ? "border-blue-600 text-blue-600 bg-white font-black"
+                  : "border-transparent text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              <span>Pendiente de pago</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                  currentSubTab === "pending_payment"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-slate-200 text-slate-500"
+                }`}
+              >
+                {splitProjects.pendingPayment.length}
+              </span>
+            </button>
+
+            <button
               id="subtab-intelligence"
               onClick={() => setCurrentSubTab("intelligence")}
               className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ml-auto ${
@@ -1468,14 +1518,18 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                 {projectsToDisplay.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="px-6 py-10 text-center text-slate-300 italic font-medium uppercase text-[10px] tracking-widest"
                     >
                       {currentSubTab === "to_delegate"
                         ? "No hay proyectos pendientes de delegar o asignar en esta área."
                         : currentSubTab === "standby"
                           ? "No hay proyectos en revisión con cliente o stand-by."
-                          : "No hay proyectos actualmente en progreso."}
+                          : currentSubTab === "approved"
+                            ? "No hay proyectos aprobados en esta área."
+                            : currentSubTab === "pending_payment"
+                              ? "No hay proyectos pendientes de pago en esta área."
+                              : "No hay proyectos actualmente en progreso."}
                     </td>
                   </tr>
                 ) : (

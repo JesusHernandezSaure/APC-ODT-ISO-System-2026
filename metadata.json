@@ -3,5 +3,8 @@
   "description": "A high-performance ODT (Technical Work Order) management system designed for APC Publicidad, featuring real-time tracking and ISO 9001:2015 compliance.",
   "requestFramePermissions": [
     "camera"
+  ],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

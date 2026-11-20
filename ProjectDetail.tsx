@@ -105,6 +105,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
   const [selectedAreasForEdit, setSelectedAreasForEdit] = useState<string[]>(project.areas_seleccionadas || []);
   const [selectedExecutives, setSelectedExecutives] = useState<string[]>(project.assignedExecutives || []);
   const [selectedDelegateIds, setSelectedDelegateIds] = useState<string[]>([]);
+  const [showCreativeSupportModal, setShowCreativeSupportModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [newDeliveryDate, setNewDeliveryDate] = useState(project.fecha_entrega || '');
 
@@ -141,7 +142,18 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
   const userRole = user?.role || '';
   const isAdminOrCuentas = userRole === UserRole.Admin || normalizeString(userDept || '') === 'cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera;
   
-  const operativeArea = OPERATIVE_AREAS.find(a => normalizeString(a || '') === normalizeString(userDept || ''));
+  const userDeptArea = OPERATIVE_AREAS.find(a => normalizeString(a || '') === normalizeString(userDept || ''));
+  const currentStageOperative = OPERATIVE_AREAS.find(a => normalizeString(a || '') === normalizeString(project.etapa_actual || ''));
+  const isAssignedToCurrentStageOperative = Boolean(
+    currentStageOperative &&
+    project.asignaciones?.some(a =>
+      normalizeString(a.area) === normalizeString(currentStageOperative) &&
+      (a.usuarioIds?.includes(user?.id || '') || a.usuarioId === user?.id)
+    )
+  );
+  const operativeArea = (userDeptArea && project.fechasInternas?.[userDeptArea])
+    ? userDeptArea
+    : (isAssignedToCurrentStageOperative ? currentStageOperative : userDeptArea);
   const internalDeadline = project.fechasInternas && operativeArea ? project.fechasInternas[operativeArea] : null;
 
   const showInternal = !isAdminOrCuentas && !!internalDeadline;
@@ -205,14 +217,27 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
       if (project.esCampana) {
         // In campaign mode, any user assigned to an area that is "En Proceso" can operate
         const userArea = user.department;
-        const isAreaLead = (hasRole(user, UserRole.Lider_Operativo) || hasRole(user, UserRole.Medico_Lider)) && project.areas_seleccionadas?.includes(userArea);
-        const isDirectlyAssigned = project.asignaciones?.some(a => (a.usuarioIds?.includes(user.id) || a.usuarioId === user.id) && project.areas_seleccionadas?.includes(a.area));
-        const areaStatus = project.estadoPorArea?.[userArea];
-        return (isAreaLead || isDirectlyAssigned) && (areaStatus === 'En Proceso' || areaStatus === 'Rechazado QA');
+        const userAreaKey = project.areas_seleccionadas?.find(a => normalizeString(a) === normalizeString(userArea));
+        const isAreaLead = (hasRole(user, UserRole.Lider_Operativo) || hasRole(user, UserRole.Medico_Lider)) && Boolean(userAreaKey);
+        const userAreaStatus = userAreaKey ? project.estadoPorArea?.[userAreaKey] : undefined;
+        const canLeadOperate = isAreaLead && (userAreaStatus === 'En Proceso' || userAreaStatus === 'Rechazado QA');
+        const canAssignedOperate = project.asignaciones?.some(a => {
+          const isAssigned = a.usuarioIds?.includes(user.id) || a.usuarioId === user.id;
+          if (!isAssigned) return false;
+          const areaKey = project.areas_seleccionadas?.find(sel => normalizeString(sel) === normalizeString(a.area));
+          if (!areaKey) return false;
+          const st = project.estadoPorArea?.[areaKey] || 'En Proceso';
+          return st === 'En Proceso' || st === 'Rechazado QA';
+        }) || false;
+        return canLeadOperate || canAssignedOperate;
       }
 
-      const isAreaLead = (hasRole(user, UserRole.Lider_Operativo) || hasRole(user, UserRole.Medico_Lider)) && user.department === currentArea;
-      const isDirectlyAssigned = project.asignaciones?.some(a => (a.usuarioIds?.includes(user.id) || a.usuarioId === user.id) && a.area === currentArea);
+      const isAreaLead = (hasRole(user, UserRole.Lider_Operativo) || hasRole(user, UserRole.Medico_Lider)) &&
+        normalizeString(user.department) === normalizeString(currentArea);
+      const isDirectlyAssigned = project.asignaciones?.some(a =>
+        (a.usuarioIds?.includes(user.id) || a.usuarioId === user.id) &&
+        normalizeString(a.area) === normalizeString(currentArea)
+      ) || false;
       return isAreaLead || isDirectlyAssigned;
     }
 
@@ -232,8 +257,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
     if (user.department === 'Cuentas' || user.role === UserRole.Cuentas_Lider || user.role === UserRole.Cuentas_Opera) return true;
     if (user.department === 'QA' || user.role === UserRole.Correccion || user.role === UserRole.QA_Opera) return true;
     if (project.areas_seleccionadas?.includes(user.department)) return true;
+    if (project.asignaciones?.some(a => a.usuarioIds?.includes(user.id) || a.usuarioId === user.id)) return true;
     return false;
-  }, [user, project.areas_seleccionadas]);
+  }, [user, project.areas_seleccionadas, project.asignaciones]);
 
   const filteredMentionUsers = useMemo(() => {
     if (!mentionSearch) return [];
@@ -366,9 +392,24 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
 
     try {
       if (project.esCampana && isProductionStage) {
-        const userArea = user.department;
-        await updateAreaStatus(project.id, userArea, 'En QA', comment);
-        setDialog({ type: 'alert', message: `Material de [${userArea}] enviado a QA.` });
+        const userArea = user?.department || '';
+        const ownActiveArea = project.areas_seleccionadas?.find(sel =>
+          normalizeString(sel) === normalizeString(userArea) &&
+          ((project.estadoPorArea?.[sel] || 'En Proceso') === 'En Proceso' || project.estadoPorArea?.[sel] === 'Rechazado QA')
+        );
+        const assignedActiveArea = project.asignaciones?.find(a => {
+          const isAssigned = a.usuarioIds?.includes(user?.id || '') || a.usuarioId === user?.id;
+          if (!isAssigned) return false;
+          const matched = project.areas_seleccionadas?.find(sel => normalizeString(sel) === normalizeString(a.area));
+          if (!matched) return false;
+          const st = project.estadoPorArea?.[matched] || 'En Proceso';
+          return st === 'En Proceso' || st === 'Rechazado QA';
+        })?.area;
+        const targetCampaignArea = ownActiveArea ||
+          (assignedActiveArea ? (project.areas_seleccionadas?.find(sel => normalizeString(sel) === normalizeString(assignedActiveArea)) || assignedActiveArea) : userArea);
+
+        await updateAreaStatus(project.id, targetCampaignArea, 'En QA', comment);
+        setDialog({ type: 'alert', message: `Material de [${targetCampaignArea}] enviado a QA.` });
       } else {
         await advanceProjectStage(project.id, comment);
         
@@ -1179,14 +1220,29 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
               const currentStage = (project.etapa_actual || project.etapaActual || '');
               const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
               const targetArea = isQA ? 'QA' : currentStage;
-              const isLeader = hasRole(user, UserRole.Lider_Operativo) && user?.department === targetArea;
+              const currentAssignment = project.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
+              const isLeader = hasRole(user, UserRole.Lider_Operativo) && normalizeString(user?.department || '') === normalizeString(targetArea);
               const isCorreccion = hasRole(user, UserRole.Correccion) && isQA;
-              const isMedicalLider = hasRole(user, UserRole.Medico_Lider) && (isQA || targetArea === 'Médico');
+              const isMedicalLider = hasRole(user, UserRole.Medico_Lider) && (isQA || normalizeString(targetArea) === 'medico');
+              const isCreativeLeaderAssignedToMedical =
+                hasRole(user, UserRole.Lider_Operativo) &&
+                normalizeString(user?.department || '') === 'creativo' &&
+                normalizeString(targetArea) === 'medico' &&
+                Boolean(currentAssignment?.usuarioIds?.includes(user?.id || '') || currentAssignment?.usuarioId === user?.id);
               
-              if (isLeader || isCorreccion || isMedicalLider || hasRole(user, UserRole.Admin)) {
+              if (isLeader || isCorreccion || isMedicalLider || isCreativeLeaderAssignedToMedical || hasRole(user, UserRole.Admin)) {
                 return (
                   <button 
-                    onClick={() => setShowDelegationModal(true)}
+                    onClick={() => {
+                      const existingIds = currentAssignment?.usuarioIds || (currentAssignment?.usuarioId ? [currentAssignment.usuarioId] : []);
+                      setSelectedDelegateIds(existingIds);
+                      const hasCreativeSelected = existingIds.some(id => {
+                        const usr = users.find(u => u.id === id);
+                        return usr && normalizeString(usr.department) === 'creativo';
+                      });
+                      setShowCreativeSupportModal(hasCreativeSelected);
+                      setShowDelegationModal(true);
+                    }}
                     className="text-[8px] font-black text-apc-pink hover:text-apc-pink/80 uppercase tracking-widest flex items-center gap-1"
                   >
                     <Icons.Plus className="w-2 h-2" /> Delegar
@@ -1200,7 +1256,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
             const currentStage = (project.etapa_actual || project.etapaActual || '');
             const isQA = currentStage.toUpperCase().includes('QA') || project.status === 'QA';
             const targetArea = isQA ? 'QA' : currentStage;
-            const assignment = project.asignaciones?.find(a => a.area === targetArea);
+            const assignment = project.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
             
             let responsibleUsers: User[] = [];
             let isLeaderDisplay = false;
@@ -1220,7 +1276,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
 
             if (responsibleUsers.length === 0) {
               const leader = users?.find(u => 
-                u.department === targetArea && 
+                normalizeString(u.department) === normalizeString(targetArea) && 
                 (u.role === UserRole.Lider_Operativo || u.role === UserRole.Correccion || u.role === UserRole.Medico_Lider)
               );
               if (leader) {
@@ -1228,6 +1284,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
                 isLeaderDisplay = true;
               }
             }
+
+            const hasCreativeSupport = !isLeaderDisplay &&
+              normalizeString(targetArea) === 'medico' &&
+              responsibleUsers.some(u => normalizeString(u.department) === 'creativo');
 
             return responsibleUsers.length > 0 ? (
               <div className="flex items-center gap-3">
@@ -1252,7 +1312,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
                     {responsibleUsers.map(u => u.name).join(', ')}
                   </p>
                   <p className={`text-[8px] font-black uppercase mt-1 ${isLeaderDisplay ? 'text-amber-600' : 'text-apc-pink'}`}>
-                    {isLeaderDisplay ? `Líder de ${targetArea} (Pte. Delegar)` : `Equipo ${targetArea}`}
+                    {isLeaderDisplay
+                      ? `Líder de ${targetArea} (Pte. Delegar)`
+                      : hasCreativeSupport
+                        ? `Equipo ${targetArea} (+ Apoyo Creativo)`
+                        : `Equipo ${targetArea}`}
                   </p>
                 </div>
               </div>
@@ -1875,60 +1939,83 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
         </div>
       )}
 
-      {showDelegationModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Delegar ODT</h2>
-              <button onClick={() => setShowDelegationModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
-                <Icons.X />
-              </button>
-            </div>
-            
-            <p className="text-xs text-slate-500 font-medium mb-6">
-              Seleccione al responsable para la etapa actual: <span className="font-black text-slate-800">{(project.etapa_actual || project.etapaActual)}</span>
-            </p>
+      {showDelegationModal && (() => {
+        const currentStageRaw = (project.etapa_actual || project.etapaActual || '');
+        const isQA = currentStageRaw.toUpperCase().includes('QA') || project.status === 'QA';
+        const isMedicalStage = !isQA && normalizeString(currentStageRaw) === 'medico';
+        const isCreativeLeaderSelf =
+          hasRole(user, UserRole.Lider_Operativo) &&
+          normalizeString(user?.department || '') === 'creativo' &&
+          !hasRole(user, UserRole.Admin) &&
+          !hasRole(user, UserRole.Medico_Lider);
 
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaboradores (Selección Múltiple)</label>
-                <div className="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-3 space-y-1 bg-slate-50/50">
-                  {(users || [])
-                    .filter(u => {
-                      const currentStage = (project.etapa_actual || project.etapaActual || '').toUpperCase();
-                      const isQA = currentStage.includes('QA') || project.status === 'QA';
-                      
-                      // Helper to check if user has a role (primary or secondary)
-                      const hasRole = (r: UserRole) => u.role === r || u.roles?.includes(r);
-                      
-                      // Exclude Admins from assignment lists to avoid cluttering operational lists
-                      if (hasRole(UserRole.Admin)) return false;
+        const activeNonAdminUsers = (users || []).filter(u => {
+          const hasUserRole = (r: UserRole) => u.role === r || u.roles?.includes(r);
+          return u.active !== false && !hasUserRole(UserRole.Admin);
+        });
 
-                      if (isQA) {
-                        return u.department === 'QA' || 
-                               hasRole(UserRole.Correccion) || 
-                               hasRole(UserRole.QA_Opera) || 
-                               hasRole(UserRole.Medico_Lider) || 
-                               hasRole(UserRole.Medico_Opera);
-                      }
-                      
-                      // For other areas, include if department matches OR if they have a leadership role for that area
-                      if (currentStage === 'MÉDICO' && (hasRole(UserRole.Medico_Lider) || hasRole(UserRole.Medico_Opera))) return true;
-                      
-                      return u.department === (project.etapa_actual || project.etapaActual);
-                    })
-                    .map(u => (
+        const primaryUsers = activeNonAdminUsers.filter(u => {
+          const hasUserRole = (r: UserRole) => u.role === r || u.roles?.includes(r);
+          if (isQA) {
+            return normalizeString(u.department) === 'qa' ||
+              hasUserRole(UserRole.Correccion) ||
+              hasUserRole(UserRole.QA_Opera) ||
+              hasUserRole(UserRole.Medico_Lider) ||
+              hasUserRole(UserRole.Medico_Opera);
+          }
+          if (isMedicalStage) {
+            if (isCreativeLeaderSelf) {
+              return normalizeString(u.department) === 'creativo';
+            }
+            return normalizeString(u.department) === 'medico' ||
+              hasUserRole(UserRole.Medico_Lider) ||
+              hasUserRole(UserRole.Medico_Opera);
+          }
+          return normalizeString(u.department) === normalizeString(currentStageRaw);
+        });
+
+        const creativeSupportUsers = (isMedicalStage && !isCreativeLeaderSelf)
+          ? activeNonAdminUsers.filter(u => normalizeString(u.department) === 'creativo')
+          : [];
+
+        const selectedCreativeCount = creativeSupportUsers.filter(u => selectedDelegateIds.includes(u.id)).length;
+
+        const toggleDelegateId = (id: string, checked: boolean) => {
+          if (checked) {
+            setSelectedDelegateIds(prev => prev.includes(id) ? prev : [...prev, id]);
+          } else {
+            setSelectedDelegateIds(prev => prev.filter(item => item !== id));
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn relative z-[1110]">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Delegar ODT</h2>
+                <button onClick={() => setShowDelegationModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+                  <Icons.X />
+                </button>
+              </div>
+              
+              <p className="text-xs text-slate-500 font-medium mb-6">
+                Seleccione al responsable para la etapa actual: <span className="font-black text-slate-800">{currentStageRaw}</span>
+              </p>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {isMedicalStage && isCreativeLeaderSelf
+                      ? 'Equipo Creativo (Apoyo a Médico)'
+                      : 'Colaboradores (Selección Múltiple)'}
+                  </label>
+                  <div className="max-h-72 overflow-y-auto border border-slate-100 rounded-2xl p-3 space-y-1 bg-slate-50/50">
+                    {primaryUsers.map(u => (
                       <label key={u.id} className="flex items-center gap-3 p-2.5 hover:bg-white hover:shadow-sm rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-200">
                         <input 
                           type="checkbox"
                           checked={selectedDelegateIds.includes(u.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedDelegateIds([...selectedDelegateIds, u.id]);
-                            } else {
-                              setSelectedDelegateIds(selectedDelegateIds.filter(id => id !== u.id));
-                            }
-                          }}
+                          onChange={(e) => toggleDelegateId(u.id, e.target.checked)}
                           className="w-4 h-4 rounded border-slate-300 text-apc-pink focus:ring-apc-pink"
                         />
                         <div className="flex flex-col">
@@ -1936,36 +2023,91 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project: initialProject, 
                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{u.role}</span>
                         </div>
                       </label>
-                    ))
-                  }
-                </div>
-                {selectedDelegateIds.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {selectedDelegateIds.map(id => {
-                      const u = users.find(user => user.id === id);
-                      return (
-                        <span key={id} className="px-2 py-1 bg-apc-pink/10 text-apc-pink text-[9px] font-black rounded-lg border border-apc-pink/20 uppercase">
-                          {u?.name}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                    ))}
 
-              <button 
-                onClick={handleDelegate}
-                disabled={selectedDelegateIds.length === 0}
-                className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
-                  selectedDelegateIds.length > 0 ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
-                }`}
-              >
-                Confirmar Delegación ({selectedDelegateIds.length})
-              </button>
+                    {creativeSupportUsers.length > 0 && (
+                      <div className="pt-2 mt-2 border-t border-slate-200/70">
+                        <button
+                          type="button"
+                          onClick={() => setShowCreativeSupportModal(prev => !prev)}
+                          className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-indigo-50/80 hover:bg-indigo-100/70 border border-indigo-200/70 text-left transition-all"
+                        >
+                          <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider flex items-center gap-2">
+                            <span>{showCreativeSupportModal ? '−' : '+'}</span>
+                            <span>Solicitar apoyo al Área Creativa</span>
+                            {selectedCreativeCount > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[8px]">
+                                {selectedCreativeCount}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[9px] font-bold text-indigo-400 uppercase">
+                            {showCreativeSupportModal ? 'Ocultar' : 'Ver'}
+                          </span>
+                        </button>
+
+                        {showCreativeSupportModal && (
+                          <div className="mt-2 space-y-1 pl-1">
+                            {creativeSupportUsers.map(u => {
+                              const isCreativeLead = u.role === UserRole.Lider_Operativo || Boolean(u.roles?.includes(UserRole.Lider_Operativo));
+                              return (
+                                <label key={u.id} className="flex items-center gap-3 p-2.5 hover:bg-white hover:shadow-sm rounded-xl cursor-pointer transition-all border border-transparent hover:border-indigo-200">
+                                  <input 
+                                    type="checkbox"
+                                    checked={selectedDelegateIds.includes(u.id)}
+                                    onChange={(e) => toggleDelegateId(u.id, e.target.checked)}
+                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                                  />
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-black text-slate-700">{u.name}</span>
+                                    <span className="text-[9px] font-black text-indigo-600 uppercase tracking-tight">
+                                      {isCreativeLead ? 'LÍDER CREATIVO' : 'CREATIVO'}
+                                    </span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {selectedDelegateIds.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedDelegateIds.map(id => {
+                        const u = users.find(usr => usr.id === id);
+                        const isCreative = u && normalizeString(u.department) === 'creativo';
+                        return (
+                          <span
+                            key={id}
+                            className={`px-2 py-1 text-[9px] font-black rounded-lg border uppercase ${
+                              isCreative
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                : 'bg-apc-pink/10 text-apc-pink border-apc-pink/20'
+                            }`}
+                          >
+                            {u?.name}{isCreative ? ' (Creativo)' : ''}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={handleDelegate}
+                  disabled={selectedDelegateIds.length === 0}
+                  className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
+                    selectedDelegateIds.length > 0 ? 'bg-apc-pink text-white hover:bg-apc-pink/80' : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                  }`}
+                >
+                  Confirmar Delegación ({selectedDelegateIds.length})
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {showDatePicker && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-fadeIn">

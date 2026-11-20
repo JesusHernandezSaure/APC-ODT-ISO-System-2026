@@ -57,46 +57,66 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
             const isAdminOrCuentas = userRole === UserRole.Admin || normalizeString(userDept) === 'cuentas' || userRole === UserRole.Cuentas_Lider || userRole === UserRole.Cuentas_Opera;
             
             const operativeArea = OPERATIVE_AREAS.find(a => normalizeString(a) === normalizeString(userDept));
-            const internalDeadline = p.fechasInternas && operativeArea ? p.fechasInternas[operativeArea] : null;
+            const currentStage = (p.etapa_actual || p.etapaActual || '');
+            const isQA = currentStage.toUpperCase().includes('QA') || p.status === 'QA';
+            const targetArea = isQA ? 'QA' : currentStage;
+            const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
+            const targetOperativeArea = OPERATIVE_AREAS.find(a => normalizeString(a) === normalizeString(targetArea));
+            const isCurrentUserAssignedToTarget = Boolean(
+              currentUser?.id &&
+              assignment &&
+              (assignment.usuarioIds?.includes(currentUser.id) || assignment.usuarioId === currentUser.id)
+            );
+            const effectiveOperativeArea = (operativeArea && p.fechasInternas?.[operativeArea])
+              ? operativeArea
+              : (isCurrentUserAssignedToTarget ? targetOperativeArea : operativeArea);
+            const internalDeadline = p.fechasInternas && effectiveOperativeArea ? p.fechasInternas[effectiveOperativeArea] : null;
 
             const showInternal = !isAdminOrCuentas && !!internalDeadline;
             const displayDate = (showInternal && internalDeadline) ? internalDeadline : p.fecha_entrega;
 
             const priority = getPriorityInfo(displayDate);
-            const currentStage = (p.etapa_actual || p.etapaActual || '');
-          const isQA = currentStage.toUpperCase().includes('QA') || p.status === 'QA';
-          const targetArea = isQA ? 'QA' : currentStage;
-          const assignment = p.asignaciones?.find(a => normalizeString(a.area) === normalizeString(targetArea));
-          let responsibleUsers: User[] = [];
-          
-          // NEW LOGIC: If stage is Cuentas or Administración, the responsible is the Executive (Owner)
-          const isAccountsStage = targetArea.toUpperCase().includes('CUENTAS') || targetArea.toUpperCase().includes('ADMINISTRACIÓN');
+            let responsibleUsers: User[] = [];
+            
+            // NEW LOGIC: If stage is Cuentas or Administración, the responsible is the Executive (Owner)
+            const isAccountsStage = targetArea.toUpperCase().includes('CUENTAS') || targetArea.toUpperCase().includes('ADMINISTRACIÓN');
 
-          if (isAccountsStage && p.assignedExecutives && p.assignedExecutives.length > 0) {
-            responsibleUsers = users.filter((u: User) => p.assignedExecutives?.includes(u.id));
-          } else if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
-            responsibleUsers = users.filter((u: User) => assignment.usuarioIds.includes(u.id));
-          } else if (assignment && assignment.usuarioId) {
-            const u = users.find((u: User) => u.id === assignment.usuarioId);
-            if (u) responsibleUsers = [u];
-          }
-
-          let isLeaderFallback = false;
-          if (responsibleUsers.length === 0) {
-            // Si no hay asignación directa, el responsable es el Líder del área actual
-            const leader = users?.find((u: User) => {
-              const memberDept = normalizeString(u.department);
-              const targetAreaNorm = normalizeString(targetArea);
-              const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
-              
-              return memberDept === targetAreaNorm && 
-                (hasRole(u, UserRole.Lider_Operativo) || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider));
-            });
-            if (leader) {
-              responsibleUsers = [leader];
-              isLeaderFallback = true;
+            if (isAccountsStage && p.assignedExecutives && p.assignedExecutives.length > 0) {
+              responsibleUsers = users.filter((u: User) => p.assignedExecutives?.includes(u.id));
+            } else if (assignment && assignment.usuarioIds && assignment.usuarioIds.length > 0) {
+              responsibleUsers = users.filter((u: User) => assignment.usuarioIds.includes(u.id));
+            } else if (assignment && assignment.usuarioId) {
+              const u = users.find((u: User) => u.id === assignment.usuarioId);
+              if (u) responsibleUsers = [u];
             }
-          }
+
+            let isLeaderFallback = false;
+            if (responsibleUsers.length === 0) {
+              // Si no hay asignación directa, el responsable es el Líder del área actual
+              const leader = users?.find((u: User) => {
+                const memberDept = normalizeString(u.department);
+                const targetAreaNorm = normalizeString(targetArea);
+                const hasRole = (usr: User, role: UserRole) => usr.role === role || (usr.roles && usr.roles.includes(role));
+                
+                return memberDept === targetAreaNorm && 
+                  (hasRole(u, UserRole.Lider_Operativo) || hasRole(u, UserRole.Correccion) || hasRole(u, UserRole.Medico_Lider));
+              });
+              if (leader) {
+                responsibleUsers = [leader];
+                isLeaderFallback = true;
+              }
+            }
+
+            const isCrossAreaSupportViewer =
+              !isAdminOrCuentas &&
+              isCurrentUserAssignedToTarget &&
+              Boolean(targetArea) &&
+              normalizeString(targetArea) !== normalizeString(userDept);
+
+            const hasCreativeSupportOnMedical =
+              !isLeaderFallback &&
+              normalizeString(targetArea) === 'medico' &&
+              responsibleUsers.some((u: User) => normalizeString(u.department) === 'creativo');
 
           const isUnassigned = highlightUnassigned && responsibleUsers.length === 0;
 
@@ -201,6 +221,15 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, onView, ch
                   {isRejected ? 'RECHAZADA' : isApproved ? 'APROBADA' : displayStatus}
                 </span>
                 <div className="text-[7px] font-black text-slate-400 mt-0.5 truncate max-w-[80px] uppercase">{(p?.etapa_actual || p?.etapaActual)}</div>
+                {isCrossAreaSupportViewer ? (
+                  <div className="inline-block mt-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[7px] font-black uppercase tracking-wider">
+                    Apoyo a {targetArea}
+                  </div>
+                ) : hasCreativeSupportOnMedical ? (
+                  <div className="inline-block mt-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[7px] font-black uppercase tracking-wider">
+                    Apoyo Creativo
+                  </div>
+                ) : null}
                 {p?.category === 'PARRILLA RRSS' && p?.materiales && p.materiales.length > 0 && (
                   <div className="text-[8px] font-bold text-blue-500 mt-1 uppercase tracking-widest">
                     {p.materiales.filter(m => m.estado === 'Aprobado/Publicado').length}/{p.materiales.length} Mats

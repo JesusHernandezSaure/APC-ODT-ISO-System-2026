@@ -2,7 +2,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useODT } from './ODTContext';
 import { Icons } from './constants';
-import { GoogleGenAI } from "@google/genai";
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 
@@ -32,20 +31,12 @@ const HelpChatbot: React.FC = () => {
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'undefined') {
-      setMessages(prev => [...prev, { role: 'assistant', content: "Error: La clave de API de Gemini (GEMINI_API_KEY) no está configurada. Por favor, configúrala en las variables de entorno de tu despliegue." }]);
-      return;
-    }
-
     const userMessage = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      
       const systemInstruction = `
         Eres el Asistente Virtual de APC System, una plataforma de gestión de proyectos regida por la norma ISO 9001. Tu objetivo es ayudar al usuario a usar la plataforma.
         El usuario con el que estás hablando tiene el rol de: ${user.role}.
@@ -58,19 +49,24 @@ const HelpChatbot: React.FC = () => {
         - Si es Líder, explícale cómo delegar en la Bandeja de Entrada o en la Caja de QA.
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
-          { role: 'user', parts: [{ text: userMessage }] }
-        ],
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-        }
+      const contents = [
+        ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
+        { role: 'user', parts: [{ text: userMessage }] }
+      ];
+
+      const res = await fetch('/api/gemini/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents, systemInstruction, temperature: 0.7 }),
       });
 
-      const aiResponse = response.text || "Lo siento, no pude procesar tu solicitud.";
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Error al conectar con el asistente.');
+      }
+
+      const json = await res.json();
+      const aiResponse = json.text || "Lo siento, no pude procesar tu solicitud.";
       setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
     } catch (error: unknown) {
       console.error("Chatbot error:", error);

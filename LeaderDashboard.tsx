@@ -19,17 +19,20 @@ interface LeaderDashboardProps {
 const TeamAssignmentDropdown: React.FC<{
   project: Project;
   teamMembers: User[];
+  creativeMembers?: User[];
   currentAssignment: ProjectAssignment | undefined;
   currentAssignmentArea: string;
   delegateProject: (projectId: string, area: string, userIds: string[]) => void;
 }> = ({
   project,
   teamMembers,
+  creativeMembers = [],
   currentAssignment,
   currentAssignmentArea,
   delegateProject,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [showCreativeSupport, setShowCreativeSupport] = useState(false);
   const [coords, setCoords] = useState({
     top: 0,
     left: 0,
@@ -39,12 +42,20 @@ const TeamAssignmentDropdown: React.FC<{
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const selectedCreativeCount = useMemo(() => {
+    if (!creativeMembers.length || !currentAssignment) return 0;
+    const assignedIds =
+      currentAssignment.usuarioIds ||
+      (currentAssignment.usuarioId ? [currentAssignment.usuarioId] : []);
+    return creativeMembers.filter((m) => assignedIds.includes(m.id)).length;
+  }, [creativeMembers, currentAssignment]);
+
   const toggleDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
-      const menuHeight = 280; // Slightly larger for safety
+      const menuHeight = creativeMembers.length > 0 ? 360 : 280;
       const showUp = spaceBelow < menuHeight;
 
       setCoords({
@@ -53,6 +64,7 @@ const TeamAssignmentDropdown: React.FC<{
         width: rect.width,
         showUp,
       });
+      setShowCreativeSupport(selectedCreativeCount > 0);
     }
     setIsOpen(!isOpen);
   };
@@ -74,6 +86,21 @@ const TeamAssignmentDropdown: React.FC<{
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
+  const handleToggleMember = (e: React.ChangeEvent<HTMLInputElement>, memberId: string, isSelected: boolean) => {
+    e.stopPropagation();
+    const currentIds =
+      currentAssignment?.usuarioIds ||
+      (currentAssignment?.usuarioId ? [currentAssignment.usuarioId] : []);
+    const newIds = isSelected
+      ? currentIds.filter((id: string) => id !== memberId)
+      : [...currentIds, memberId];
+    delegateProject(project.id, currentAssignmentArea, newIds);
+  };
+
+  const hasCreativeRoleLeader = (u: User) =>
+    u.role === UserRole.Lider_Operativo ||
+    Boolean(u.roles?.includes(UserRole.Lider_Operativo));
+
   return (
     <div className="relative inline-block">
       <button
@@ -92,13 +119,13 @@ const TeamAssignmentDropdown: React.FC<{
         createPortal(
           <div
             ref={menuRef}
-            className={`fixed bg-white border border-slate-100 rounded-2xl shadow-2xl z-[9999] p-4 w-64 animate-fadeIn ${coords.showUp ? "origin-bottom" : "origin-top"}`}
+            className={`fixed bg-white border border-slate-100 rounded-2xl shadow-2xl z-[9999] p-4 ${creativeMembers.length > 0 ? "w-72" : "w-64"} animate-fadeIn ${coords.showUp ? "origin-bottom" : "origin-top"}`}
             style={{
               top: coords.showUp ? "auto" : coords.top,
               bottom: coords.showUp ? window.innerHeight - coords.top : "auto",
               left: Math.min(
-                coords.left + coords.width - 256,
-                window.innerWidth - 272,
+                coords.left + coords.width - (creativeMembers.length > 0 ? 288 : 256),
+                window.innerWidth - (creativeMembers.length > 0 ? 304 : 272),
               ),
             }}
             onClick={(e) => e.stopPropagation()}
@@ -129,7 +156,7 @@ const TeamAssignmentDropdown: React.FC<{
                 </svg>
               </button>
             </div>
-            <div className="space-y-1 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar pr-1">
               {teamMembers.map((m) => {
                 const isSelected =
                   currentAssignment?.usuarioIds?.includes(m.id) ||
@@ -144,22 +171,7 @@ const TeamAssignmentDropdown: React.FC<{
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          const currentIds =
-                            currentAssignment?.usuarioIds ||
-                            (currentAssignment?.usuarioId
-                              ? [currentAssignment.usuarioId]
-                              : []);
-                          const newIds = isSelected
-                            ? currentIds.filter((id: string) => id !== m.id)
-                            : [...currentIds, m.id];
-                          delegateProject(
-                            project.id,
-                            currentAssignmentArea,
-                            newIds,
-                          );
-                        }}
+                        onChange={(e) => handleToggleMember(e, m.id, Boolean(isSelected))}
                         className="w-4 h-4 accent-apc-pink rounded border-slate-300 cursor-pointer"
                       />
                     </div>
@@ -176,6 +188,72 @@ const TeamAssignmentDropdown: React.FC<{
                   </label>
                 );
               })}
+
+              {creativeMembers.length > 0 && (
+                <div className="pt-2 mt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCreativeSupport((prev) => !prev);
+                    }}
+                    className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-indigo-50/70 hover:bg-indigo-50 border border-indigo-100 text-left transition-all"
+                  >
+                    <span className="text-[9px] font-black text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>{showCreativeSupport ? "−" : "+"}</span>
+                      <span>Solicitar apoyo a Creativo</span>
+                      {selectedCreativeCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[8px]">
+                          {selectedCreativeCount}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[8px] font-bold text-indigo-400 uppercase">
+                      {showCreativeSupport ? "Ocultar" : "Ver"}
+                    </span>
+                  </button>
+
+                  {showCreativeSupport && (
+                    <div className="mt-1.5 space-y-1 pl-1">
+                      {creativeMembers.map((m) => {
+                        const isSelected =
+                          currentAssignment?.usuarioIds?.includes(m.id) ||
+                          currentAssignment?.usuarioId === m.id;
+                        return (
+                          <label
+                            key={m.id}
+                            className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all ${isSelected ? "bg-indigo-50 border border-indigo-200" : "hover:bg-slate-50 border border-transparent"}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="relative flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) =>
+                                  handleToggleMember(e, m.id, Boolean(isSelected))
+                                }
+                                className="w-4 h-4 accent-indigo-600 rounded border-slate-300 cursor-pointer"
+                              />
+                            </div>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span
+                                className={`text-[10px] font-bold uppercase truncate ${isSelected ? "text-indigo-700" : "text-slate-600"}`}
+                              >
+                                {m.name}
+                              </span>
+                              <span className="text-[7px] text-indigo-500 font-black uppercase tracking-tighter truncate">
+                                {hasCreativeRoleLeader(m)
+                                  ? "LÍDER CREATIVO"
+                                  : "CREATIVO"}
+                              </span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="mt-3 pt-2 border-t text-center">
               <button
@@ -202,20 +280,6 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     Record<string, Record<string, unknown>>
   >({});
   const [isLoadingDetails, setIsLoadingDetails] = useState(true);
-  const [showAnnouncement, setShowAnnouncement] = useState(() => {
-    if (typeof window !== "undefined") {
-      return !localStorage.getItem("leader_intelligence_announcement_v2");
-    }
-    return false;
-  });
-  const [dontShowAgain, setDontShowAgain] = useState(false);
-
-  const handleCloseAnnouncement = (forcePermanent = false) => {
-    if (forcePermanent || dontShowAgain) {
-      localStorage.setItem("leader_intelligence_announcement_v2", "true");
-    }
-    setShowAnnouncement(false);
-  };
 
   useEffect(() => {
     let active = true;
@@ -556,6 +620,18 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
     });
   }, [user, users, activeArea]);
 
+  const creativeMembers = useMemo(() => {
+    if (!users || normalizeString(activeArea) !== "medico") return [];
+    const hasRole = (usr: User, role: UserRole) =>
+      usr.role === role || (usr.roles && usr.roles.includes(role));
+    return users.filter(
+      (u) =>
+        u.active !== false &&
+        !hasRole(u, UserRole.Admin) &&
+        normalizeString(u.department) === "creativo",
+    );
+  }, [users, activeArea]);
+
   const areaProjects = useMemo(() => {
     if (!activeArea || !projects) return [];
 
@@ -781,135 +857,6 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
           </div>
         </div>
       </header>
-      {showAnnouncement && (
-        <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden animate-fadeIn mb-8">
-          {/* Fondo Decorativo */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl"></div>
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-400/20 rounded-full -ml-10 -mb-10 blur-2xl"></div>
-
-          <div className="relative z-10 flex flex-col md:flex-row gap-6 items-start">
-            <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-sm shadow-inner flex-shrink-0">
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                className="text-white"
-              >
-                <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
-                <path d="M3 15h18v7H3z" />
-                <path d="M8 15v7" />
-                <path d="M16 15v7" />
-              </svg>
-            </div>
-
-            <div className="flex-1">
-              <div className="flex justify-between items-start">
-                <h2 className="text-xl font-black uppercase tracking-tight mb-2">
-                  ¡Nueva Herramienta de Inteligencia para Líderes!
-                </h2>
-                <button
-                  onClick={() => handleCloseAnnouncement()}
-                  className="text-white/60 hover:text-white transition-colors p-1"
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
-                </button>
-              </div>
-              <p className="text-indigo-100 text-sm font-medium mb-4 max-w-3xl leading-relaxed">
-                Hemos integrado un nuevo módulo de{" "}
-                <span className="font-black text-white">
-                  "Inteligencia y Reportes"
-                </span>{" "}
-                impulsado por IA para ayudarte a optimizar la gestión operativa
-                de tu área y elevar los estándares de calidad ISO 9001.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white/10 p-3 rounded-xl border border-white/10">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">
-                    Análisis con IA
-                  </p>
-                  <p className="text-[11px] font-bold text-white">
-                    Genera reportes estratégicos personalizados basados en el
-                    desempeño real de tu equipo.
-                  </p>
-                </div>
-                <div className="bg-white/10 p-3 rounded-xl border border-white/10">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">
-                    Métricas ISO
-                  </p>
-                  <p className="text-[11px] font-bold text-white">
-                    Visualiza automáticamente tiempos de ciclo, tasas de
-                    aprobación y reprocesos técnicos.
-                  </p>
-                </div>
-                <div className="bg-white/10 p-3 rounded-xl border border-white/10">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">
-                    Auditoría Virtual
-                  </p>
-                  <p className="text-[11px] font-bold text-white">
-                    Identifica cuellos de botella y recibe recomendaciones
-                    estratégicas para escalar tu área.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 flex flex-col md:flex-row md:items-center gap-6">
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => {
-                      setCurrentSubTab("intelligence");
-                      handleCloseAnnouncement(true);
-                    }}
-                    className="bg-white text-indigo-700 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-lg"
-                  >
-                    Explorar Ahora
-                  </button>
-                  <button
-                    onClick={() => handleCloseAnnouncement()}
-                    className="text-indigo-200 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
-                  >
-                    Entendido, cerrar
-                  </button>
-                </div>
-
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={dontShowAgain}
-                      onChange={(e) => setDontShowAgain(e.target.checked)}
-                      className="sr-only"
-                    />
-                    <div className={`w-4 h-4 rounded border-2 transition-colors flex items-center justify-center ${dontShowAgain ? 'bg-white border-white' : 'border-white/30 group-hover:border-white/50'}`}>
-                      {dontShowAgain && (
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="4">
-                          <path d="M20 6L9 17l-5-5" />
-                        </svg>
-                      )}
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-indigo-200 group-hover:text-white transition-colors uppercase tracking-wider">
-                    No volver a mostrar este aviso
-                  </span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Tarjetas de Carga del Equipo o Control QA */}
       {activeArea === "QA" ? (
@@ -1152,12 +1099,28 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {teamMembers.map((m) => {
-              const load = projects.filter(
+              const activeAssignedProjects = projects.filter(
                 (p) =>
+                  p.status !== "Finalizado" &&
+                  p.status !== "Cancelado" &&
                   p.asignaciones?.some(
                     (a) => a.usuarioIds?.includes(m.id) || a.usuarioId === m.id,
-                  ) && p.status !== "Finalizado",
-              ).length;
+                  ),
+              );
+              const load = activeAssignedProjects.length;
+              const medicalSupportLoad = activeAssignedProjects.filter((p) => {
+                const assignedAreas =
+                  p.asignaciones
+                    ?.filter(
+                      (a) => a.usuarioIds?.includes(m.id) || a.usuarioId === m.id,
+                    )
+                    .map((a) => normalizeString(a.area)) || [];
+                return (
+                  assignedAreas.length > 0 &&
+                  !assignedAreas.includes(normalizeString(activeArea)) &&
+                  assignedAreas.includes("medico")
+                );
+              }).length;
               const isMe = m.id === user?.id;
               const metrics = getOperativeAreaMetrics(m.id, activeArea);
 
@@ -1190,6 +1153,11 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                       <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">
                         En Progreso (Activas)
                       </p>
+                      {medicalSupportLoad > 0 && (
+                        <p className="text-[8px] font-black text-indigo-600 uppercase tracking-tight mt-0.5">
+                          Incluye {medicalSupportLoad} apoyo a Médico
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1351,19 +1319,6 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
       )}
 
       {/* Tabla de Gestión de ODTs */}
-      {!localStorage.getItem('dismissedSortNoticeLeader') && (
-        <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between mb-6 shadow-sm">
-          <p className="text-xs font-bold text-indigo-900">
-             ¡Nueva funcionalidad! Ahora puedes organizar tus tablas haciendo clic en los encabezados de columna.
-          </p>
-          <button onClick={() => {
-              localStorage.setItem('dismissedSortNoticeLeader', 'true');
-              window.location.reload(); // Simple way to re-render and hide it
-          }} className="text-indigo-600 hover:text-indigo-800">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-      )}
       {user?.role !== UserRole.Admin && (
         <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden animate-fadeIn">
           {/* Selector de Pestañas Operativas del Líder */}
@@ -1574,27 +1529,46 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                           </p>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`w-2 h-2 rounded-full ${currentAssignment ? "bg-apc-green shadow-sm" : "bg-apc-pink/30 animate-pulse"}`}
-                            ></div>
-                            <span
-                              className={`text-xs font-bold uppercase ${currentAssignment ? "text-slate-600" : "text-apc-pink italic"}`}
-                            >
-                              {currentAssignment
-                                ? users
-                                    .filter(
-                                      (m) =>
-                                        currentAssignment.usuarioIds?.includes(
-                                          m.id,
-                                        ) ||
-                                        currentAssignment.usuarioId === m.id,
-                                    )
-                                    .map((u) => u.name)
-                                    .join(", ")
-                                : "PENDIENTE ASIGNAR"}
-                            </span>
-                          </div>
+                          {(() => {
+                            const assignedMembers = currentAssignment
+                              ? users.filter(
+                                  (m) =>
+                                    currentAssignment.usuarioIds?.includes(
+                                      m.id,
+                                    ) || currentAssignment.usuarioId === m.id,
+                                )
+                              : [];
+                            const hasCreativeSupport =
+                              normalizeString(activeArea) === "medico" &&
+                              assignedMembers.some(
+                                (m) =>
+                                  normalizeString(m.department) === "creativo",
+                              );
+
+                            return (
+                              <div className="flex flex-col items-start">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`w-2 h-2 rounded-full ${currentAssignment ? "bg-apc-green shadow-sm" : "bg-apc-pink/30 animate-pulse"}`}
+                                  ></div>
+                                  <span
+                                    className={`text-xs font-bold uppercase ${currentAssignment ? "text-slate-600" : "text-apc-pink italic"}`}
+                                  >
+                                    {assignedMembers.length > 0
+                                      ? assignedMembers
+                                          .map((u) => u.name)
+                                          .join(", ")
+                                      : "PENDIENTE ASIGNAR"}
+                                  </span>
+                                </div>
+                                {hasCreativeSupport && (
+                                  <span className="mt-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 text-[8px] font-black uppercase tracking-wider">
+                                    Apoyo Creativo
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-xs font-bold text-slate-700">
@@ -1644,6 +1618,7 @@ const LeaderDashboard: React.FC<LeaderDashboardProps> = ({ onViewProject }) => {
                           <TeamAssignmentDropdown
                             project={p}
                             teamMembers={teamMembers}
+                            creativeMembers={creativeMembers}
                             currentAssignment={currentAssignment}
                             currentAssignmentArea={currentAssignmentArea}
                             delegateProject={delegateProject}

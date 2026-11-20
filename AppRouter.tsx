@@ -97,12 +97,6 @@ export const AppRouter: React.FC<{
   const { user, logout, isLoggingIn } = useODT();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [showLeaderBadge] = useState(() => {
-    if (typeof window !== "undefined") {
-      return !localStorage.getItem("leader_intelligence_announcement_v2");
-    }
-    return false;
-  });
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -307,7 +301,6 @@ export const AppRouter: React.FC<{
                   label="Dashboard Lider" 
                   active={isModuleActive('/leader-dashboard')} 
                   isCollapsed={isCollapsed} 
-                  hasBadge={showLeaderBadge}
                   onClick={() => { navigate('/leader-dashboard'); setIsMobileMenuOpen(false); }} 
                 />
               )}

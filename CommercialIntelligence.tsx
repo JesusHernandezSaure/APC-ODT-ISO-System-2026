@@ -3,7 +3,6 @@ import React, { useState, useMemo } from 'react';
 import { useODT } from './ODTContext';
 import { UserRole } from './types';
 import { Icons } from './constants';
-import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -99,16 +98,8 @@ const CommercialIntelligence: React.FC = () => {
   const runAIAnalysis = async () => {
     if (!currentUser) return;
     
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'undefined') {
-      setAnalysis("Error: La clave de API de Gemini (GEMINI_API_KEY) no está configurada en el entorno. Si estás en Vercel, asegúrate de añadirla en las variables de entorno del proyecto y volver a desplegar.");
-      return;
-    }
-
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      
       // Package data for AI
       const dataForAI = filteredProjects.map(p => ({
         id: p.id,
@@ -141,9 +132,7 @@ Basado en los datos, identifica:
 4. Estrategia de Crecimiento: Proporciona 3 recomendaciones directivas (accionables de alto nivel) para escalar la agencia, optimizar el margen de ganancia o abrir nuevas líneas de negocio.`;
       }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `RESUMEN DE MÉTRICAS ACTUALES (FILTRADAS):
+      const contents = `RESUMEN DE MÉTRICAS ACTUALES (FILTRADAS):
 - Volumen Total: ${kpis.total}
 - ODTs en Revisión QA (Proceso Normal): ${kpis.odtsInQA}
 - Total de Rechazos Internos (Retrabajo Real): ${kpis.totalRealRework}
@@ -155,14 +144,21 @@ CONTEXTO ESTRATÉGICO:
 Tienes ${kpis.odtsInQA} ODTs en revisión normal de calidad, pero has acumulado ${kpis.totalRealRework} rechazos internos totales (retrabajo real).
 
 DETALLE DE PROYECTOS PARA ANÁLISIS:
-${JSON.stringify(dataForAI, null, 2)}`,
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-        }
+${JSON.stringify(dataForAI, null, 2)}`;
+
+      const res = await fetch('/api/gemini/commercial-intelligence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents, systemInstruction, temperature: 0.7 }),
       });
 
-      setAnalysis(response.text || "No se pudo generar el análisis.");
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Error al conectar con el servidor.');
+      }
+
+      const json = await res.json();
+      setAnalysis(json.text || "No se pudo generar el análisis.");
     } catch (error) {
       console.error("AI Analysis failed:", error);
       setAnalysis("Error al conectar con el motor de Inteligencia Comercial. Por favor, intente más tarde.");

@@ -3,7 +3,6 @@ import React, { useState, useMemo } from 'react';
 import { useODT } from './ODTContext';
 import { UserRole } from './types';
 import { Icons } from './constants';
-import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -114,16 +113,8 @@ const VirtualAuditor: React.FC = () => {
   }, [projects, users, hasFinancialAccess]);
 
   const runAnalysis = async () => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'undefined') {
-      setAnalysis("Error: La clave de API de Gemini (GEMINI_API_KEY) no está configurada en el entorno. Si estás en Vercel, asegúrate de añadirla en las variables de entorno del proyecto y volver a desplegar.");
-      return;
-    }
-
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      
       const promptData = {
         totalProjects: stats.totalProjects,
         finishedProjects: stats.finishedProjects,
@@ -167,16 +158,23 @@ const VirtualAuditor: React.FC = () => {
         Sé crítico pero constructivo. Usa un tono profesional y experto.
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: "Realiza el análisis de auditoría y mejora para la agencia basado en los datos proporcionados.",
-        config: {
+      const res = await fetch('/api/gemini/virtual-auditor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: "Realiza el análisis de auditoría y mejora para la agencia basado en los datos proporcionados.",
           systemInstruction,
           temperature: 0.7,
-        }
+        }),
       });
 
-      setAnalysis(response.text || "No se pudo generar el análisis.");
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Error al conectar con el servidor.');
+      }
+
+      const json = await res.json();
+      setAnalysis(json.text || "No se pudo generar el análisis.");
     } catch (error: unknown) {
       console.error("AI Analysis failed:", error);
       const errorMessage = error instanceof Error ? error.message : 

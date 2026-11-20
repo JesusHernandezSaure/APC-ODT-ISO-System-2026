@@ -684,6 +684,27 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
         UserRole.Administracion_Lider
       ].includes(userRole);
 
+      const isAssignedToArea = (areaName: string) =>
+        p.asignaciones?.some(
+          a => normalizeString(a.area) === normalizeString(areaName) &&
+            (a.usuarioIds?.includes(userId || '') || a.usuarioId === userId)
+        ) || false;
+
+      const isAssignedToAnyArea =
+        p.asignaciones?.some(
+          a => a.usuarioIds?.includes(userId || '') || a.usuarioId === userId
+        ) || false;
+
+      const isAssignedToActiveStage = (() => {
+        if (p.esCampana && p.areas_seleccionadas?.length) {
+          return p.areas_seleccionadas.some(sel => {
+            const st = p.estadoPorArea?.[sel] || 'En Proceso';
+            return (st === 'En Proceso' || st === 'Rechazado QA') && isAssignedToArea(sel);
+          });
+        }
+        return isAssignedToArea(p.etapa_actual || '');
+      })();
+
       // 2. RBAC Logic: Leaders vs Operatives
       let passesRBAC = false;
       if (isLeaderRole) {
@@ -713,11 +734,18 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
         } else {
           const isMyTurn = projectStage === userDept;
           const isCorrections = p.status === 'Correcciones' && projectStage === userDept;
+          const isCampaignMyArea = Boolean(
+            p.esCampana &&
+            p.areas_seleccionadas?.some(sel => {
+              const st = p.estadoPorArea?.[sel] || 'En Proceso';
+              return normalizeString(sel) === userDept && (st === 'En Proceso' || st === 'Rechazado QA');
+            })
+          );
           const wasInMyArea = p.areas_seleccionadas?.some(a => normalizeString(a) === userDept) || p.asignaciones?.some(a => normalizeString(a.area) === userDept);
           if (activeTab === 'tasks') {
-            if (isMyTurn || isCorrections) passesRBAC = true;
+            if (isMyTurn || isCorrections || isCampaignMyArea || isAssignedToActiveStage) passesRBAC = true;
           } else {
-            if (isMyTurn || isCorrections || wasInMyArea) passesRBAC = true;
+            if (isMyTurn || isCorrections || isCampaignMyArea || wasInMyArea || isAssignedToAnyArea) passesRBAC = true;
           }
         }
       } else {
@@ -735,7 +763,7 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
         );
         const isOwner = userDept === 'cuentas' && p.assignedExecutives?.includes(userId || '');
         
-        if (isInMyTurn && (isAssigned || isOwner)) passesRBAC = true;
+        if ((isInMyTurn && (isAssigned || isOwner)) || isAssignedToActiveStage) passesRBAC = true;
       }
 
       if (passesRBAC) return true;
@@ -823,7 +851,7 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
         if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
-    }, [projects, user, searchTerm, filterStatus, filterCategory, filterSubCategory, filterResponsible, users, activeTab, sortConfig]);
+    }, [projects, user, searchTerm, filterStatus, filterCategory, filterSubCategory, filterResponsible, users, activeTab, sortConfig, canViewTabs]);
     
     return (
       <div className="space-y-6 max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
@@ -846,20 +874,6 @@ const MyInbox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProj
             />
           </div>
         </header>
-
-        {!localStorage.getItem('dismissedSortNoticeOperative') && (
-          <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between shadow-sm z-30 mb-4">
-            <p className="text-xs font-bold text-indigo-900">
-               ¡Nueva funcionalidad! Ahora puedes organizar tus tablas haciendo clic en los encabezados de columna.
-            </p>
-            <button onClick={() => {
-                localStorage.setItem('dismissedSortNoticeOperative', 'true');
-                window.location.reload(); 
-            }} className="text-indigo-600 hover:text-indigo-800">
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-        )}
 
         {(user?.role === UserRole.Cuentas_Lider || user?.role === UserRole.Admin) && accountsUsers.length > 0 && (
           <div className="flex flex-col gap-3 bg-white p-5 rounded-3xl border border-slate-100 shadow-sm animate-fadeIn mb-4">
@@ -1140,20 +1154,6 @@ const QABox: React.FC<{ onViewProject: (id: string) => void }> = ({ onViewProjec
 
   return (
     <div className="space-y-6 animate-fadeIn max-h-[calc(100vh-100px)] overflow-y-auto pr-2 custom-scrollbar relative">
-      {!localStorage.getItem('dismissedSortNoticeInbox') && (
-        <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between shadow-sm z-30">
-          <p className="text-xs font-bold text-indigo-900">
-             ¡Nueva funcionalidad! Ahora puedes organizar tus tablas haciendo clic en los encabezados de columna.
-          </p>
-          <button onClick={() => {
-              localStorage.setItem('dismissedSortNoticeInbox', 'true');
-              window.location.reload(); 
-          }} className="text-indigo-600 hover:text-indigo-800">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-      )}
-
       <header className="sticky top-0 bg-white z-20 py-4 border-b border-slate-100 -mx-2 px-2">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight">Caja de QA</h1>
         <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1 italic">

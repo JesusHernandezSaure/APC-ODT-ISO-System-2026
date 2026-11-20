@@ -463,7 +463,7 @@ export const generateAreaReport = (
       (c) => c.isSystemEvent && areaUserIds.includes(c.authorId) && (c.text?.includes("Entrega Técnica") || c.text?.includes("completada") || c.text?.includes("Enviado a [QA"))
     );
 
-    let fechaLimiteArea = deadlineStr ? new Date(`${deadlineStr.includes("T") ? deadlineStr.split("T")[0] : deadlineStr}T23:59:59`).toLocaleDateString() : "S/F";
+    const fechaLimiteArea = deadlineStr ? new Date(`${deadlineStr.includes("T") ? deadlineStr.split("T")[0] : deadlineStr}T23:59:59`).toLocaleDateString() : "S/F";
     let fechaEntregaArea = "No entregado";
     let estatusEntregaArea = "Pendiente";
 

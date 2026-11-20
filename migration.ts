@@ -6,7 +6,7 @@ export const migrateComments = async (dryRun: boolean = true) => {
   console.log(`Starting migration... (dryRun: ${dryRun})`);
   const snap = await get(ref(db, 'project_details'));
   const data = snap.val();
-  const updates: Record<string, any> = {};
+  const updates: Record<string, unknown> = {};
   
   if (!data) return;
 

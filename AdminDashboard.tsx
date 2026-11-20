@@ -4,7 +4,6 @@ import { UserRole } from './types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import * as Constants from './constants';
 import { OPERATIVE_AREAS } from './workflowConfig';
-import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { generateMasterReport, downloadMasterCSV, fixOklchForHtml2Canvas } from './reportUtils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -169,15 +168,8 @@ const AdminDashboard: React.FC = () => {
   }, [user]);
 
   const runAIAnalysis = async () => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'undefined') {
-      setAnalysis("Error: API Key no configurada.");
-      return;
-    }
-
     setLoadingAI(true);
     try {
-      const ai = new GoogleGenAI({ apiKey });
       const dataForAI = filteredProjects.map(p => ({
         id: p.id,
         marca: p.marca,
@@ -187,16 +179,19 @@ const AdminDashboard: React.FC = () => {
         areas: p.areas_seleccionadas
       }));
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `Analiza estos datos de la agencia y genera un reporte estratégico ejecutivo:\n\n${JSON.stringify(dataForAI, null, 2)}`,
-        config: {
-          systemInstruction: "Eres un Consultor Estratégico Senior. Proporciona un análisis macro del negocio, identificando rentabilidad, riesgos y 3 recomendaciones clave para escalar la agencia.",
-          temperature: 0.7,
-        }
+      const res = await fetch('/api/gemini/admin-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataForAI }),
       });
 
-      setAnalysis(response.text || "No se pudo generar el análisis.");
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Error al conectar con el servidor de IA.');
+      }
+
+      const json = await res.json();
+      setAnalysis(json.text || "No se pudo generar el análisis.");
     } catch (error: unknown) {
       console.error("AI Analysis failed:", error);
       const errorMessage = error instanceof Error ? error.message : 
@@ -206,7 +201,7 @@ const AdminDashboard: React.FC = () => {
       if (errorMessage.includes("503") || errorMessage.toLowerCase().includes("unavailable")) {
         setAnalysis("El servicio de IA está experimentando una alta demanda. Por favor, intenta de nuevo en unos segundos.");
       } else {
-        setAnalysis("Error al conectar con la IA.");
+        setAnalysis(`Error al conectar con la IA: ${errorMessage}`);
       }
     } finally {
       setLoadingAI(false);

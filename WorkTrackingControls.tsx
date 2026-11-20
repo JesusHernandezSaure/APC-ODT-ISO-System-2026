@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Project, ProjectWorkTracking, User } from '../types';
+import { Project, User } from './types';
 import { useODT } from './ODTContext';
 
 interface WorkTrackingControlsProps {
@@ -29,10 +29,11 @@ export const WorkTrackingControls: React.FC<WorkTrackingControlsProps> = ({ proj
         const startTime = userTrackingP.startTime ? new Date(userTrackingP.startTime).getTime() : now;
         const duration = now - startTime;
         
-        const { startTime: _, ...trackingWithoutStartTime } = {
+        const trackingWithoutStartTime = {
           ...userTrackingP,
           status: 'paused' as const,
           totalTimeMs: userTrackingP.totalTimeMs + duration,
+          startTime: undefined,
         };
         
         await updateFullProject(p.id, {
@@ -56,10 +57,11 @@ export const WorkTrackingControls: React.FC<WorkTrackingControlsProps> = ({ proj
     const startTime = userTracking.startTime ? new Date(userTracking.startTime).getTime() : now;
     const duration = now - startTime;
     
-    const { startTime: _, ...trackingWithoutStartTime } = {
+    const trackingWithoutStartTime = {
       ...userTracking,
       status: 'paused' as const,
       totalTimeMs: userTracking.totalTimeMs + duration,
+      startTime: undefined,
     };
     await updateFullProject(project.id, {
       workTracking: { ...project.workTracking, [user.id]: trackingWithoutStartTime }

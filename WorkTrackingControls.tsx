@@ -1,86 +1,120 @@
 import React, { useState } from 'react';
-import { Project, User } from './types';
+import { Project, ProjectWorkTracking, User } from './types';
 import { useODT } from './ODTContext';
 
 interface WorkTrackingControlsProps {
   project: Project;
   user: User;
-  updateFullProject: (projectId: string, projectData: Partial<Project>) => Promise<void>;
+  updateFullProject?: (projectId: string, projectData: Partial<Project>) => Promise<void>;
 }
 
-export const WorkTrackingControls: React.FC<WorkTrackingControlsProps> = ({ project, user, updateFullProject }) => {
+const buildPausedTracking = (tracking: ProjectWorkTracking, nowMs: number): ProjectWorkTracking => {
+  const parsedStart = tracking.startTime ? new Date(tracking.startTime).getTime() : NaN;
+  const duration = Number.isFinite(parsedStart) ? Math.max(0, nowMs - parsedStart) : 0;
+  const baseTotal = Number.isFinite(tracking.totalTimeMs) && tracking.totalTimeMs >= 0 ? tracking.totalTimeMs : 0;
+
+  return {
+    status: 'paused',
+    totalTimeMs: baseTotal + duration,
+    reviewConfirmed: Boolean(tracking.reviewConfirmed),
+    ...(tracking.reviewComment !== undefined ? { reviewComment: tracking.reviewComment } : {}),
+    ...(tracking.reviewedBy !== undefined ? { reviewedBy: tracking.reviewedBy } : {}),
+    ...(tracking.reviewedAt !== undefined ? { reviewedAt: tracking.reviewedAt } : {})
+  };
+};
+
+export const WorkTrackingControls: React.FC<WorkTrackingControlsProps> = ({ project, user }) => {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewComment, setReviewComment] = useState('');
-  const { projects } = useODT();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const { projects, updateUserWorkTracking } = useODT();
   
-  const userTracking = project.workTracking?.[user.id] || { status: 'idle', totalTimeMs: 0, reviewConfirmed: false };
+  const userTracking: ProjectWorkTracking = project.workTracking?.[user.id] || {
+    status: 'idle',
+    totalTimeMs: 0,
+    reviewConfirmed: false
+  };
 
   const handleStart = async () => {
-    // 1. Find other projects with status 'in_progress' for this user
-    const otherActiveProjects = projects.filter(p => 
-      p.id !== project.id && 
-      p.workTracking?.[user.id]?.status === 'in_progress'
-    );
+    if (isSubmitting || !userTracking.reviewConfirmed) return;
+    setErrorMsg(null);
+    setIsSubmitting(true);
 
-    // 2. Pause them
-    for (const p of otherActiveProjects) {
-        const now = new Date().getTime();
-        const userTrackingP = p.workTracking![user.id];
-        const startTime = userTrackingP.startTime ? new Date(userTrackingP.startTime).getTime() : now;
-        const duration = now - startTime;
-        
-        const trackingWithoutStartTime = {
-          ...userTrackingP,
-          status: 'paused' as const,
-          totalTimeMs: userTrackingP.totalTimeMs + duration,
-          startTime: undefined,
-        };
-        
-        await updateFullProject(p.id, {
-          workTracking: { ...p.workTracking, [user.id]: trackingWithoutStartTime }
-        });
+    try {
+      const now = Date.now();
+      // 1. Find other projects with status 'in_progress' for this user
+      const otherActiveProjects = projects.filter(p => 
+        p.id !== project.id && 
+        p.workTracking?.[user.id]?.status === 'in_progress'
+      );
+
+      // 2. Pause them atomically without sending undefined fields to Firebase RTDB
+      for (const p of otherActiveProjects) {
+        const userTrackingP = p.workTracking?.[user.id];
+        if (!userTrackingP) continue;
+        await updateUserWorkTracking(p.id, user.id, buildPausedTracking(userTrackingP, now));
+      }
+
+      // 3. Start current project
+      const baseTotal = Number.isFinite(userTracking.totalTimeMs) && userTracking.totalTimeMs >= 0
+        ? userTracking.totalTimeMs
+        : 0;
+      const updatedTracking: ProjectWorkTracking = {
+        ...userTracking,
+        totalTimeMs: baseTotal,
+        status: 'in_progress',
+        startTime: new Date().toISOString()
+      };
+      await updateUserWorkTracking(project.id, user.id, updatedTracking);
+    } catch (error) {
+      console.error('Error al iniciar trabajo:', error);
+      setErrorMsg('No se pudo iniciar el trabajo. Por favor, intenta de nuevo.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // 3. Start current project
-    const updatedTracking = {
-      ...userTracking,
-      status: 'in_progress',
-      startTime: new Date().toISOString()
-    };
-    await updateFullProject(project.id, {
-      workTracking: { ...project.workTracking, [user.id]: updatedTracking }
-    });
   };
 
   const handlePause = async () => {
-    const now = new Date().getTime();
-    const startTime = userTracking.startTime ? new Date(userTracking.startTime).getTime() : now;
-    const duration = now - startTime;
-    
-    const trackingWithoutStartTime = {
-      ...userTracking,
-      status: 'paused' as const,
-      totalTimeMs: userTracking.totalTimeMs + duration,
-      startTime: undefined,
-    };
-    await updateFullProject(project.id, {
-      workTracking: { ...project.workTracking, [user.id]: trackingWithoutStartTime }
-    });
+    if (isSubmitting) return;
+    setErrorMsg(null);
+    setIsSubmitting(true);
+
+    try {
+      await updateUserWorkTracking(project.id, user.id, buildPausedTracking(userTracking, Date.now()));
+    } catch (error) {
+      console.error('Error al pausar trabajo:', error);
+      setErrorMsg('No se pudo pausar el trabajo. Por favor, intenta de nuevo.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleConfirmReview = async () => {
-    if (!reviewComment.trim()) return;
-    const updatedTracking = {
-      ...userTracking,
-      reviewConfirmed: true,
-      reviewComment,
-      reviewedBy: user.name,
-      reviewedAt: new Date().toISOString()
-    };
-    await updateFullProject(project.id, {
-      workTracking: { ...project.workTracking, [user.id]: updatedTracking }
-    });
-    setShowReviewModal(false);
+    if (isSubmitting || !reviewComment.trim()) return;
+    setErrorMsg(null);
+    setIsSubmitting(true);
+
+    try {
+      const baseTotal = Number.isFinite(userTracking.totalTimeMs) && userTracking.totalTimeMs >= 0
+        ? userTracking.totalTimeMs
+        : 0;
+      const updatedTracking: ProjectWorkTracking = {
+        ...userTracking,
+        totalTimeMs: baseTotal,
+        reviewConfirmed: true,
+        reviewComment: reviewComment.trim(),
+        reviewedBy: user.name,
+        reviewedAt: new Date().toISOString()
+      };
+      await updateUserWorkTracking(project.id, user.id, updatedTracking);
+      setShowReviewModal(false);
+    } catch (error) {
+      console.error('Error al confirmar revisión:', error);
+      setErrorMsg('No se pudo confirmar la revisión. Por favor, intenta de nuevo.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -91,7 +125,8 @@ export const WorkTrackingControls: React.FC<WorkTrackingControlsProps> = ({ proj
         {!userTracking.reviewConfirmed && (
           <button 
             onClick={() => setShowReviewModal(true)}
-            className="px-4 py-2 bg-amber-500 text-white font-black text-[9px] rounded-lg hover:bg-amber-600"
+            disabled={isSubmitting}
+            className="px-4 py-2 bg-amber-500 text-white font-black text-[9px] rounded-lg hover:bg-amber-600 disabled:opacity-50"
           >
             CONFIRMAR REVISIÓN MATERIAL
           </button>
@@ -100,23 +135,28 @@ export const WorkTrackingControls: React.FC<WorkTrackingControlsProps> = ({ proj
         {userTracking.status === 'idle' || userTracking.status === 'paused' ? (
           <button 
             onClick={handleStart}
-            disabled={!userTracking.reviewConfirmed}
-            className="px-4 py-2 bg-emerald-600 text-white font-black text-[9px] rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+            disabled={!userTracking.reviewConfirmed || isSubmitting}
+            className="px-4 py-2 bg-emerald-600 text-white font-black text-[9px] rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            INICIAR TRABAJO
+            {isSubmitting ? 'INICIANDO...' : 'INICIAR TRABAJO'}
           </button>
         ) : (
           <button 
             onClick={handlePause}
-            className="px-4 py-2 bg-rose-600 text-white font-black text-[9px] rounded-lg hover:bg-rose-700"
+            disabled={isSubmitting}
+            className="px-4 py-2 bg-rose-600 text-white font-black text-[9px] rounded-lg hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            PAUSAR TRABAJO
+            {isSubmitting ? 'PAUSANDO...' : 'PAUSAR TRABAJO'}
           </button>
         )}
       </div>
       
       {userTracking.status === 'in_progress' && (
         <p className="text-[10px] font-bold text-emerald-700 animate-pulse">● Trabajando...</p>
+      )}
+
+      {errorMsg && (
+        <p className="text-[10px] font-bold text-rose-600">{errorMsg}</p>
       )}
 
       {showReviewModal && (
@@ -130,8 +170,10 @@ export const WorkTrackingControls: React.FC<WorkTrackingControlsProps> = ({ proj
               className="w-full border p-2 rounded text-xs h-20"
             />
             <div className="flex gap-2">
-              <button onClick={() => setShowReviewModal(false)} className="flex-1 py-2 bg-slate-200 text-slate-700 rounded text-xs font-bold">CANCELAR</button>
-              <button onClick={handleConfirmReview} className="flex-1 py-2 bg-emerald-600 text-white rounded text-xs font-bold">CONFIRMAR</button>
+              <button onClick={() => setShowReviewModal(false)} disabled={isSubmitting} className="flex-1 py-2 bg-slate-200 text-slate-700 rounded text-xs font-bold disabled:opacity-50">CANCELAR</button>
+              <button onClick={handleConfirmReview} disabled={isSubmitting || !reviewComment.trim()} className="flex-1 py-2 bg-emerald-600 text-white rounded text-xs font-bold disabled:opacity-50">
+                {isSubmitting ? 'GUARDANDO...' : 'CONFIRMAR'}
+              </button>
             </div>
           </div>
         </div>

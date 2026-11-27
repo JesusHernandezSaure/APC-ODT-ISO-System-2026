@@ -280,6 +280,7 @@ export interface ODTContextType {
   fastTrackProject: (projectId: string, destinationStage: string, justification: string) => Promise<void>;
   earlyCloseProject: (projectId: string, data: { motivo: string; explicacion?: string; linkEvidencia: string }) => Promise<void>;
   updateFullProject: (projectId: string, projectData: Partial<Project>) => Promise<void>;
+  updateUserWorkTracking: (projectId: string, userId: string, tracking: ProjectWorkTracking) => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   clearNotifications: () => Promise<void>;
   syncCalendarEvent: (projectId: string, data: Partial<Project>) => Promise<void>;

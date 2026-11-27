@@ -2,9 +2,25 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { ref, onValue, update, get, set, query, orderByChild, equalTo, limitToLast } from "firebase/database";
 import { db } from './firebase';
-import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material, Notification as ProjectNotification, ProjectComment } from './types';
+import { Project, User, ODTContextType, UserRole, LoginResult, Client, Material, Notification as ProjectNotification, ProjectComment, ProjectWorkTracking } from './types';
 import { GLOBAL_STAGES, calculateRoadmap, normalizeString } from './workflowConfig';
 import { computeProjectMetrics } from './metricUtils';
+
+const stripUndefined = (val: unknown): unknown => {
+  if (Array.isArray(val)) {
+    return val.map(stripUndefined).filter(item => item !== undefined);
+  }
+  if (val !== null && typeof val === 'object') {
+    const clean: Record<string, unknown> = {};
+    Object.entries(val as Record<string, unknown>).forEach(([k, v]) => {
+      if (v !== undefined) {
+        clean[k] = stripUndefined(v);
+      }
+    });
+    return clean;
+  }
+  return val;
+};
 
 const ODTContext = createContext<ODTContextType | undefined>(undefined);
 
@@ -363,12 +379,14 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     // Split heavy fields into project_details
     Object.entries(updates).forEach(([key, value]) => {
+      if (value === undefined) return;
+      const cleanValue = stripUndefined(value);
       if (key === 'comentarios') {
-        rootUpdates[`project_details/${projectId}/comentarios`] = value;
+        rootUpdates[`project_details/${projectId}/comentarios`] = cleanValue;
       } else if (key === 'brief') {
-        rootUpdates[`project_details/${projectId}/brief`] = value;
+        rootUpdates[`project_details/${projectId}/brief`] = cleanValue;
       } else {
-        rootUpdates[`projects/${projectId}/${key}`] = value;
+        rootUpdates[`projects/${projectId}/${key}`] = cleanValue;
       }
     });
 
@@ -488,6 +506,28 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     await updateProjectInDB(projectId, updates);
     await syncCalendarEvent(projectId, { ...projects.find(p => p.id === projectId), ...updates });
+  };
+
+  const updateUserWorkTracking = async (
+    projectId: string,
+    targetUserId: string,
+    tracking: ProjectWorkTracking
+  ) => {
+    if (!db || !user) return;
+    const sanitizedTracking: Record<string, unknown> = {
+      status: tracking.status,
+      totalTimeMs: Number.isFinite(tracking.totalTimeMs) && tracking.totalTimeMs >= 0 ? tracking.totalTimeMs : 0,
+      reviewConfirmed: Boolean(tracking.reviewConfirmed)
+    };
+    if (tracking.startTime) sanitizedTracking.startTime = tracking.startTime;
+    if (tracking.reviewComment !== undefined) sanitizedTracking.reviewComment = tracking.reviewComment;
+    if (tracking.reviewedBy !== undefined) sanitizedTracking.reviewedBy = tracking.reviewedBy;
+    if (tracking.reviewedAt !== undefined) sanitizedTracking.reviewedAt = tracking.reviewedAt;
+
+    const rootUpdates: Record<string, unknown> = {};
+    rootUpdates[`projects/${projectId}/workTracking/${targetUserId}`] = sanitizedTracking;
+    rootUpdates[`projects/${projectId}/updatedAt`] = new Date().toISOString();
+    await update(ref(db), rootUpdates);
   };
 
   const removeProject = async (projectId: string, reason?: string) => {
@@ -1788,6 +1828,7 @@ export const ODTProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       processClientFeedback,
       updateBilling, updatePaymentStatus,
       updateFullProject,
+      updateUserWorkTracking,
       checkSLA, delegateProject, reassignProjectAndFolder, 
       addClient: async (n, notes, montoIgualaMensual) => {
         if (!db || !user) return;

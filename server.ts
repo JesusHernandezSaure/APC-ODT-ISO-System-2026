@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -316,7 +317,7 @@ async function startServer() {
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
+    app.get('/{*splat}', (_req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }
